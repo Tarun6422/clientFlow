@@ -1,0 +1,236 @@
+import type { Client, Settings } from '../types';
+import { uid } from './utils';
+
+const daysAgo = (days: number, hourOffset = 0): number => {
+  const d = new Date();
+  d.setDate(d.getDate() - days);
+  d.setHours(10 + hourOffset, 24, 0, 0);
+  return d.getTime();
+};
+
+const futureDate = (days: number): string => {
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0, 10);
+};
+
+export function buildSampleClients(): Client[] {
+  const base: Omit<Client, 'id'>[] = [
+    {
+      name: 'Aarav Mehta',
+      company: 'WoodCraft Furniture',
+      email: 'aarav@woodcraftfurniture.in',
+      phone: '+91 98200 11223',
+      whatsapp: '+91 98200 11223',
+      country: 'India',
+      city: 'Mumbai',
+      address: '14, Andheri Industrial Estate, Andheri West, Mumbai 400058',
+      preferredContact: 'WhatsApp',
+      clientType: 'Small Business',
+      businessName: 'WoodCraft Furniture',
+      industry: 'Furniture & Manufacturing',
+      description:
+        'WoodCraft Furniture designs and manufactures handcrafted wooden furniture — living room sets, dining tables, wardrobes and modular kitchens — for homes and offices across Mumbai. They sell both retail and through interior designer partners, and want to grow their direct online enquiries.',
+      yearsInBusiness: '12',
+      existingWebsite: 'https://woodcraftfurniture.in',
+      instagram: 'https://instagram.com/woodcraft.furniture',
+      facebook: 'https://facebook.com/woodcraftfurniture',
+      linkedin: '',
+      otherSocial: '',
+      projectType: 'Business Website',
+      projectGoal:
+        'Showcase the furniture catalog with high-quality photography and convert visitors into quote requests and showroom visits.',
+      targetAudience:
+        'Homeowners and interior designers in Mumbai looking for premium custom-made wooden furniture.',
+      deadline: futureDate(21),
+      budget: '₹50,000 – ₹1,00,000',
+      pages: ['Home', 'About', 'Products', 'Blog', 'Contact', 'FAQ'],
+      customPages: ['Custom Furniture', 'Showroom Visit'],
+      features: ['WhatsApp Integration', 'Contact Form', 'Google Maps', 'Gallery', 'SEO'],
+      customFeatures: ['Quote Request Form'],
+      contentProvider: 'Client',
+      notes:
+        'Client will provide product photography from their studio. Wants WhatsApp button on every product card. Favours warm, natural wood tones in the design.',
+      theme: 'modern-minimal',
+      status: 'In Progress',
+      createdAt: daysAgo(21, 2),
+      updatedAt: daysAgo(1, 4),
+    },
+    {
+      name: 'Priya Sharma',
+      company: 'Spice Garden Restaurant',
+      email: 'priya@spicegarden.in',
+      phone: '+91 99870 44556',
+      whatsapp: '+91 99870 44556',
+      country: 'India',
+      city: 'Bengaluru',
+      address: '22, Church Street, Bengaluru 560001',
+      preferredContact: 'Email',
+      clientType: 'Individual',
+      businessName: 'Spice Garden',
+      industry: 'Restaurant',
+      description:
+        'Spice Garden is a family-run North Indian fine-dining restaurant in Bengaluru. Known for its thalis and weekend live music, it hosts private events and corporate dinners. The owners want an elegant site that captures the warm, premium dining experience and drives table reservations.',
+      yearsInBusiness: '8',
+      existingWebsite: '',
+      instagram: 'https://instagram.com/spicegardenblr',
+      facebook: 'https://facebook.com/spicegardenblr',
+      linkedin: '',
+      otherSocial: '',
+      projectType: 'Restaurant',
+      projectGoal:
+        'Showcase the menu and ambience, and drive direct table reservations and event enquiries through the website.',
+      targetAudience:
+        'Food lovers, families and corporate clients in Bengaluru searching for premium North Indian dining and private events.',
+      deadline: futureDate(14),
+      budget: '₹1,00,000 – ₹2,00,000',
+      pages: ['Home', 'About', 'Menu', 'Private Events', 'Gallery', 'Contact'],
+      customPages: ['Reservations'],
+      features: ['Booking System', 'Google Maps', 'Gallery', 'WhatsApp Integration', 'SEO'],
+      customFeatures: ['Online Table Reservation'],
+      contentProvider: 'Agency',
+      notes:
+        'Food photography shoot is scheduled with our team. Reservation widget must integrate with their Zomato partner account. Dark, moody, luxurious feel preferred.',
+      theme: 'editorial',
+      status: 'Completed',
+      createdAt: daysAgo(45, 1),
+      updatedAt: daysAgo(6, 3),
+    },
+    {
+      name: 'Rohan Kapoor',
+      company: 'Skyline Realty',
+      email: 'rohan@skylinerealty.in',
+      phone: '+91 98100 77889',
+      whatsapp: '+91 98100 77889',
+      country: 'India',
+      city: 'Gurugram',
+      address: 'Tower B, Cyber City, DLF Phase 2, Gurugram 122002',
+      preferredContact: 'Phone',
+      clientType: 'Agency',
+      businessName: 'Skyline Realty',
+      industry: 'Real Estate',
+      description:
+        'Skyline Realty is a full-service real estate agency handling residential and commercial properties across Gurugram and NCR. They represent premium builders and also resell luxury apartments. They need a modern portal to list properties and capture serious buyer enquiries.',
+      yearsInBusiness: '15',
+      existingWebsite: 'https://skylinerealty.in',
+      instagram: 'https://instagram.com/skylinerealty',
+      facebook: 'https://facebook.com/skylinerealty',
+      linkedin: 'https://linkedin.com/company/skylinerealty',
+      otherSocial: '',
+      projectType: 'Real Estate',
+      projectGoal:
+        'Build a premium property listing portal where buyers can browse projects, shortlist properties and book site visits.',
+      targetAudience:
+        'High-net-worth individuals and corporate clients looking to buy or rent premium residential and commercial property in NCR.',
+      deadline: futureDate(30),
+      budget: '₹2,00,000+',
+      pages: ['Home', 'Properties', 'Projects', 'Agents', 'About', 'Blog', 'Contact'],
+      customPages: ['Site Visit Booking'],
+      features: ['Search', 'Contact Form', 'WhatsApp Integration', 'Google Maps', 'Analytics', 'SEO'],
+      customFeatures: ['Property Shortlist', 'EMI Calculator'],
+      contentProvider: 'Not Decided',
+      notes:
+        'Property data will come from their existing CRM via CSV exports. Needs an EMI calculator widget on every property page. Thumbnails must be optimised for fast mobile loading.',
+      theme: 'dark-premium',
+      status: 'Review',
+      createdAt: daysAgo(12, 2),
+      updatedAt: daysAgo(0, 2),
+    },
+    {
+      name: 'Ananya Iyer',
+      company: 'PayFlow Technologies',
+      email: 'ananya@payflow.tech',
+      phone: '+91 99000 33445',
+      whatsapp: '',
+      country: 'India',
+      city: 'Pune',
+      address: 'WeWork Pavilion, Baner Road, Pune 411045',
+      preferredContact: 'Email',
+      clientType: 'Startup',
+      businessName: 'PayFlow',
+      industry: 'Technology',
+      description:
+        'PayFlow builds a payment automation platform for freelancers and small agencies — invoicing, payment reminders and smart reconciliation in one dashboard. Backed by a pre-seed round, they are launching publicly in two months and need a marketing site that converts trial sign-ups.',
+      yearsInBusiness: '2',
+      existingWebsite: '',
+      instagram: '',
+      facebook: '',
+      linkedin: 'https://linkedin.com/company/payflowtech',
+      otherSocial: 'https://twitter.com/payflow_tech',
+      projectType: 'SaaS',
+      projectGoal:
+        'Launch a product marketing website with a clear value proposition, feature tour and frictionless free-trial sign-up.',
+      targetAudience:
+        'Freelancers, designers and small agencies in India struggling with late payments and manual invoicing.',
+      deadline: futureDate(28),
+      budget: '₹1,00,000 – ₹2,00,000',
+      pages: ['Home', 'Features', 'Pricing', 'Blog', 'Contact'],
+      customPages: ['Security'],
+      features: ['User Login', 'User Registration', 'Newsletter', 'Blog/CMS', 'Analytics', 'SEO'],
+      customFeatures: ['Free Trial Signup', 'Product Changelog'],
+      contentProvider: 'AI Generated',
+      notes:
+        'Brand kit is ready (logo, fonts, colours). Need GDPR-style privacy page and cookie banner. Copy will be drafted by our team using their feature docs.',
+      theme: 'bento-saas',
+      status: 'Requirement Collected',
+      createdAt: daysAgo(5, 3),
+      updatedAt: daysAgo(0, 1),
+    },
+    {
+      name: 'Neha Gupta',
+      company: 'Bloom & Co. Fashion',
+      email: 'neha@bloomandco.in',
+      phone: '+91 97690 22110',
+      whatsapp: '+91 97690 22110',
+      country: 'India',
+      city: 'Jaipur',
+      address: 'Shop 4, Civil Lines Market, Jaipur 302006',
+      preferredContact: 'Instagram',
+      clientType: 'Small Business',
+      businessName: 'Bloom & Co.',
+      industry: 'Fashion',
+      description:
+        'Bloom & Co. is a contemporary women’s fashion label from Jaipur — hand-block printed dresses, kurtas and accessories. They sell through Instagram and two retail stores, and want an e-commerce presence with a boutique, artistic feel.',
+      yearsInBusiness: '4',
+      existingWebsite: '',
+      instagram: 'https://instagram.com/bloomandco.fashion',
+      facebook: 'https://facebook.com/bloomandco',
+      linkedin: '',
+      otherSocial: '',
+      projectType: 'E-commerce',
+      projectGoal:
+        'Launch an online store with a curated lookbook, easy product browsing and smooth checkout for their existing Instagram audience.',
+      targetAudience:
+        'Fashion-conscious women aged 22–40 across India who follow sustainable and handcrafted fashion brands.',
+      deadline: futureDate(35),
+      budget: '₹50,000 – ₹1,00,000',
+      pages: ['Home', 'Shop', 'Lookbook', 'About', 'Blog', 'Contact'],
+      customPages: ['Store Locator', 'Shipping & Returns'],
+      features: ['Shopping Cart', 'Payment Gateway', 'User Registration', 'Newsletter', 'Wishlist', 'SEO'],
+      customFeatures: ['Instagram Feed Integration'],
+      contentProvider: 'Client',
+      notes:
+        'Client will supply lookbook photography. Payment gateway must support UPI and COD. Needs size guide table on every product page.',
+      theme: 'aurora-glass',
+      status: 'Draft',
+      createdAt: daysAgo(2, 1),
+      updatedAt: daysAgo(2, 1),
+    },
+  ];
+
+  return base.map((c) => ({ ...c, id: uid() }));
+}
+
+export const DEFAULT_SETTINGS: Settings = {
+  agencyName: 'Your Agency',
+  logo: '',
+  email: 'hello@youragency.com',
+  phone: '+91 90000 00000',
+  defaultCurrency: '₹ (INR)',
+  pdfFooter: 'Prepared with care by Your Agency',
+  defaultTheme: 'modern-minimal',
+  aiProvider: 'local',
+  aiEndpoint: '',
+  aiApiKey: '',
+  aiModel: 'gpt-4o-mini',
+};
