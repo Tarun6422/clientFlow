@@ -4,6 +4,8 @@ import type { Client, Settings } from '../types';
 import { getTheme, type ThemeWithPreview } from '../themes';
 import { formatDate, sanitizeFileName } from './utils';
 import { generateProjectSummary } from './summary';
+import { dynamicAnswerRows } from './typeQuestions';
+import { isPrototypeStale } from './staleness';
 
 const PAGE_W = 595.28;
 const PAGE_H = 841.89;
@@ -347,6 +349,31 @@ export function generateClientPdf(client: Client, settings: Settings): void {
   y =
     (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 40;
 
+  /* ---------- 05b — website-type requirements (dynamic answers) ---------- */
+
+  const dynRows = dynamicAnswerRows(client.dynamicAnswers, client.projectType);
+  if (dynRows.length > 0) {
+    ensure(60);
+    subheading(`${client.projectType} Requirements`);
+    autoTable(doc, {
+      startY: y,
+      head: [['Question', 'Answer']],
+      body: dynRows.map((r) => [pdfSafe(r.label), pdfSafe(r.value)]),
+      theme: 'grid',
+      styles: { font: 'helvetica', fontSize: 9.5, cellPadding: 6, textColor: INK, lineColor: BORDER, lineWidth: 0.7 },
+      headStyles: { fillColor: BRAND, textColor: WHITE_TXT, fontStyle: 'bold', fontSize: 10 },
+      alternateRowStyles: { fillColor: BG },
+      columnStyles: { 0: { cellWidth: 300 }, 1: { cellWidth: 'auto' } },
+      margin: { top: 70, bottom: 70, left: MARGIN, right: MARGIN },
+      didDrawPage: () => {
+        drawHeaderLeft();
+        drawFooterBase();
+      },
+    });
+    y =
+      (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 30;
+  }
+
   /* ---------- 06 — design direction ---------- */
 
   ensure(60);
@@ -412,11 +439,17 @@ export function generateClientPdf(client: Client, settings: Settings): void {
   if (client.prototype && client.sitemap && client.sitemap.length > 0) {
     const versions = client.prototypeVersions ?? [];
     const totalSections = client.prototype.pages.reduce((acc, p) => acc + p.sections.length, 0);
-    const statusLine = client.approval?.approved
-      ? `Approved${client.approval.date ? ` on ${formatDate(client.approval.date)}` : ''}.`
+    let statusLine = client.approval?.approved
+      ? `Approved${client.approval.date ? ` on ${formatDate(client.approval.date)}` : ''}${client.approval.version ? ` (Version ${client.approval.version})` : ''}.`
       : client.feedback && client.feedback.length > 0
         ? `Changes requested by the client (${client.feedback.length} feedback item${client.feedback.length === 1 ? '' : 's'}).`
         : 'Not yet approved — awaiting client review.';
+    if (client.approval?.approved && client.feedback && client.feedback.length > 0) {
+      statusLine += ' The previously approved version remains approved in history.';
+    }
+    if (isPrototypeStale(client)) {
+      statusLine += ' The prototype is out of date — the client information changed after it was generated; regenerate to rebuild it from the latest answers.';
+    }
     paragraph(
       `An interactive website prototype has been generated from the client's requirements. It contains ${client.prototype.pages.length} page${client.prototype.pages.length === 1 ? '' : 's'} with ${totalSections} section${totalSections === 1 ? '' : 's'} in total, following the ${theme ? theme.name : 'selected'} design system. ${statusLine}`,
       { leading: 16 }
@@ -430,7 +463,13 @@ export function generateClientPdf(client: Client, settings: Settings): void {
     }
 
     subheading('Sitemap');
-    y = drawSitemapTree(doc, client.sitemap, MARGIN, y, CONTENT_W);
+    y = drawSitemapTree(doc, client.sitemap, MARGIN, y, CONTENT_W, () => {
+      doc.addPage();
+      y = 66;
+      drawHeaderLeft();
+      drawFooterBase();
+      return y;
+    });
     y += 4;
 
     subheading('Pages & Sections');
@@ -549,7 +588,9 @@ function drawSitemapTree(
   sitemap: Array<{ id: string; label: string }>,
   x0: number,
   startY: number,
-  width: number
+  width: number,
+  /** Adds a new page and returns the new content Y — prevents overflow on long sitemaps. */
+  onPageBreak: () => number
 ): number {
   let y = startY + 12;
   const rootX = x0 + width / 2;
@@ -565,6 +606,11 @@ function drawSitemapTree(
   y += 30;
 
   sitemap.forEach((page, i) => {
+    // Page-break guard: long sitemaps flow onto fresh pages instead of overflowing.
+    if (y + 28 > BREAK_Y) {
+      y = onPageBreak();
+      y += 12;
+    }
     const rowY = y - 11;
     const rowW = Math.min(190, width * 0.45);
     // connector: from root down to this row

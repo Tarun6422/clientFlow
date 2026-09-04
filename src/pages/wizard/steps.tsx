@@ -19,6 +19,8 @@ import {
 } from 'lucide-react';
 import type { ClientDraft } from '../../types';
 import { Input, Textarea, Chip } from '../../components/form';
+import TypeQuestions from '../../components/TypeQuestions';
+import { dynamicAnswerRows } from '../../lib/typeQuestions';
 import { cn, formatLongDate } from '../../lib/utils';
 import {
   BUDGETS,
@@ -485,6 +487,17 @@ export function StepRequirements({ draft, update }: StepProps) {
         subtitle="Pin down the pages, features and content plan for the project."
       />
 
+      {/* Contextual questions based on the selected website type */}
+      {draft.projectType && (
+        <TypeQuestions
+          websiteType={draft.projectType}
+          answers={draft.dynamicAnswers}
+          onChange={(patch) =>
+            update('dynamicAnswers', { ...(draft.dynamicAnswers ?? {}), ...patch })
+          }
+        />
+      )}
+
       <div>
         <Subheading count={draft.pages.length + allCustomPages.length}>Required Pages</Subheading>
         <MultiChips options={PAGES} selected={draft.pages} onToggle={togglePage} />
@@ -734,12 +747,28 @@ export function StepReview({ draft, goToStep }: ReviewSectionProps) {
         </ReviewCard>
 
         <div className="space-y-4">
-          <ReviewCard title="Website Pages" step={3} onEdit={goToStep}>
-            <TagRow items={[...draft.pages, ...draft.customPages]} empty="No pages selected yet" />
+        <ReviewCard title="Website Pages" step={3} onEdit={goToStep}>
+          <TagRow items={[...draft.pages, ...draft.customPages]} empty="No pages selected yet" />
+        </ReviewCard>
+        <ReviewCard title="Features" step={3} onEdit={goToStep}>
+          <TagRow items={[...draft.features, ...draft.customFeatures]} empty="No features selected yet" />
+        </ReviewCard>
+        {draft.projectType && dynamicAnswerRows(draft.dynamicAnswers, draft.projectType).length > 0 && (
+          <ReviewCard title={`${draft.projectType} Requirements`} step={3} onEdit={goToStep}>
+            <div className="space-y-1.5">
+              {dynamicAnswerRows(draft.dynamicAnswers, draft.projectType).map((row) => (
+                <div key={row.label} className="flex items-start justify-between gap-4">
+                  <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                    {row.label}
+                  </span>
+                  <span className="min-w-0 text-right text-[13px] font-medium text-slate-700 dark:text-slate-200">
+                    {row.value}
+                  </span>
+                </div>
+              ))}
+            </div>
           </ReviewCard>
-          <ReviewCard title="Features" step={3} onEdit={goToStep}>
-            <TagRow items={[...draft.features, ...draft.customFeatures]} empty="No features selected yet" />
-          </ReviewCard>
+        )}
         </div>
 
         <ReviewCard title="Selected Theme" step={4} onEdit={goToStep}>

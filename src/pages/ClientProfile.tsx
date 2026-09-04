@@ -1,6 +1,7 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
+  AlertTriangle,
   ArrowLeft,
   Briefcase,
   Building2,
@@ -28,6 +29,8 @@ import { STATUSES, STATUS_META } from '../lib/constants';
 import { formatDate, formatLongDate, initials, relativeTime } from '../lib/utils';
 import { generateClientPdf } from '../lib/pdf';
 import { generateProjectSummary } from '../lib/summary';
+import { isPrototypeStale } from '../lib/staleness';
+import { dynamicAnswerRows } from '../lib/typeQuestions';
 import { cn } from '../lib/utils';
 import ClientAvatar from '../components/ClientAvatar';
 import ThemePreviewModal from '../components/ThemePreviewModal';
@@ -343,6 +346,25 @@ export default function ClientProfile() {
           <div className="mt-3">
             <ChipList label="Required features" items={allFeatures} />
           </div>
+          {client.projectType && dynamicAnswerRows(client.dynamicAnswers, client.projectType).length > 0 && (
+            <div className="mt-4 border-t border-slate-100 pt-3 dark:border-slate-800">
+              <p className="text-[12px] font-semibold uppercase tracking-wide text-slate-400">
+                {client.projectType} requirements
+              </p>
+              <div className="mt-1.5 space-y-1.5">
+                {dynamicAnswerRows(client.dynamicAnswers, client.projectType).map((row) => (
+                  <div key={row.label} className="flex items-start justify-between gap-4">
+                    <span className="min-w-0 text-[13px] font-medium text-slate-500 dark:text-slate-400">
+                      {row.label}
+                    </span>
+                    <span className="shrink-0 text-right text-[13px] font-semibold text-slate-700 dark:text-slate-200">
+                      {row.value}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </InfoCard>
 
         <InfoCard icon={MessageCircle} title="Additional Notes" step={4} clientId={client.id}>
@@ -495,6 +517,7 @@ function PrototypeCard({ client, onShare }: { client: ReturnType<typeof useApp>[
   const feedback = client.feedback ?? [];
   const approved = client.approval?.approved;
   const sitemap = client.sitemap ?? [];
+  const stale = isPrototypeStale(client);
 
   const status: ClientStatus = approved
     ? 'Prototype Approved'
@@ -517,6 +540,11 @@ function PrototypeCard({ client, onShare }: { client: ReturnType<typeof useApp>[
           {prototype && (
             <div className="flex items-center gap-2">
               <StatusBadge status={status} />
+              {stale && (
+                <span className="badge bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-200 dark:bg-amber-500/10 dark:text-amber-300 dark:ring-amber-500/30">
+                  <AlertTriangle size={11} /> Out of date
+                </span>
+              )}
               <span className="text-xs text-slate-400">
                 {versions.length > 0 && `Version ${versions[versions.length - 1].number} · `}
                 {sitemap.length} pages
@@ -604,6 +632,17 @@ function PrototypeCard({ client, onShare }: { client: ReturnType<typeof useApp>[
               </div>
             )}
 
+            {stale && (
+              <div className="flex items-start gap-2.5 rounded-xl border border-amber-200 bg-amber-50/60 p-3.5 dark:border-amber-500/30 dark:bg-amber-500/10">
+                <AlertTriangle size={15} className="mt-0.5 shrink-0 text-amber-500" />
+                <p className="text-[13px] leading-relaxed text-amber-800 dark:text-amber-300">
+                  <span className="font-bold">This prototype is out of date.</span> The client's information changed
+                  after it was generated. Regenerate to rebuild it from the latest answers — a new version is created
+                  and the old ones stay in history.
+                </p>
+              </div>
+            )}
+
             <div className="flex flex-wrap gap-2">
               <Link to={`/clients/${client.id}/prototype`} className="btn-primary btn-sm">
                 <LayoutTemplate size={14} /> Open Workspace
@@ -614,8 +653,11 @@ function PrototypeCard({ client, onShare }: { client: ReturnType<typeof useApp>[
               <button onClick={onShare} className="btn-secondary btn-sm">
                 <Share2 size={14} /> Copy Share Link
               </button>
-              <Link to={`/clients/${client.id}/generate`} className="btn-ghost btn-sm">
-                <Sparkles size={14} /> Regenerate
+              <Link
+                to={`/clients/${client.id}/generate`}
+                className={stale ? 'btn-primary btn-sm' : 'btn-ghost btn-sm'}
+              >
+                <Sparkles size={14} /> {stale ? 'Regenerate Prototype' : 'Regenerate'}
               </Link>
             </div>
 

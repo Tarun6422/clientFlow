@@ -19,7 +19,9 @@ export default function GenerationScreen({
   onDone,
 }: {
   business: string;
-  onDone: () => void;
+  /** May be async — the parent advances phases when the promise resolves,
+      so the "Prototype ready ✓" state stays visible until generation finishes. */
+  onDone: () => void | Promise<void>;
 }) {
   const [step, setStep] = useState(0);
   const [finished, setFinished] = useState(false);

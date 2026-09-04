@@ -3,6 +3,7 @@ import type {
   AiAnalysisField,
   BlueprintSection,
   Client,
+  ClientStatus,
   PageBlueprint,
   PrototypePage,
   PrototypeSection,

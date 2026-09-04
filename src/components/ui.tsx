@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { X, type LucideIcon } from 'lucide-react';
 import { cn } from '../lib/utils';
 import type { ClientStatus } from '../types';
@@ -99,10 +99,11 @@ export function ModalHeader({
   subtitle?: string;
   onClose: () => void;
 }) {
+  const titleId = useId();
   return (
     <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-6 py-4 dark:border-slate-800">
       <div>
-        <h3 className="text-base font-bold text-slate-900 dark:text-white">{title}</h3>
+        <h3 id={titleId} className="text-base font-bold text-slate-900 dark:text-white">{title}</h3>
         {subtitle && <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">{subtitle}</p>}
       </div>
       <button onClick={onClose} className="icon-btn shrink-0" aria-label="Close">
@@ -133,8 +134,9 @@ export function ConfirmModal({
   onConfirm,
   onClose,
 }: ConfirmModalProps) {
+  const titleId = useId();
   return (
-    <Modal open={open} onClose={onClose} size="md">
+    <Modal open={open} onClose={onClose} size="md" labelledBy={titleId}>
       <div className="px-6 pb-6 pt-7">
         <div
           className={cn(
@@ -150,7 +152,7 @@ export function ConfirmModal({
             <path d="M12 17h.01" />
           </svg>
         </div>
-        <h3 className="mt-4 text-center text-lg font-bold text-slate-900 dark:text-white">
+        <h3 id={titleId} className="mt-4 text-center text-lg font-bold text-slate-900 dark:text-white">
           {title}
         </h3>
         <p className="mt-2 text-center text-sm leading-relaxed text-slate-500 dark:text-slate-400">

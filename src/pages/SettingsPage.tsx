@@ -215,8 +215,10 @@ export default function SettingsPage() {
         </h2>
         <p className="mb-5 mt-1 text-sm text-slate-500 dark:text-slate-400">
           Powers the ✨ AI buttons in the prototype workspace (improve copy, rewrite headings, generate CTAs, suggest
-          sections and SEO titles). The built-in engine works fully offline — connect your own OpenAI-compatible
-          endpoint for higher quality. No keys are hardcoded; everything is stored in your own settings.
+          sections and SEO titles) and can optionally assist the generation pipeline (extra sitemap pages and plan
+          suggestions). The built-in engine works fully offline — connect your own OpenAI-compatible endpoint for
+          higher quality. No keys are hardcoded; everything is stored in your own settings, and any API failure falls
+          back to the built-in engine automatically.
         </p>
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="sm:col-span-2">

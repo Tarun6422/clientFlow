@@ -7,6 +7,7 @@ import {
   Check,
   ClipboardList,
   FileText,
+  LayoutTemplate,
   Lightbulb,
   RefreshCw,
   Save,
@@ -17,15 +18,18 @@ import { useApp } from '../context/AppContext';
 import type { AiAnalysis, PageBlueprint, PrototypeSnapshot, SitemapPage } from '../types';
 import { analyzeClient, buildPrototype, createVersion, generateBlueprints, generateSitemap, nextVersionNumber } from '../lib/generator';
 import { versionStatusFor } from '../lib/generator';
+import { getAIProvider, type GenerationContext } from '../lib/ai';
+import { summarizeDynamicAnswers } from '../lib/typeQuestions';
+import { sourceFingerprint } from '../lib/staleness';
 import GenerationScreen from '../components/prototype/GenerationScreen';
 import SitemapTree from '../components/prototype/SitemapTree';
 import FlowTopbar from '../components/prototype/FlowTopbar';
-import { cn } from '../lib/utils';
+import { cn, uid } from '../lib/utils';
 import { getTheme } from '../themes';
 
-type Phase = 'loading' | 'analysis' | 'sitemap' | 'blueprints';
+type Phase = 'loading' | 'analysis' | 'sitemap' | 'blueprints' | 'prototype';
 
-const FLOW_STEPS: Array<{ id: Phase | 'prototype'; label: string }> = [
+const FLOW_STEPS: Array<{ id: Phase; label: string }> = [
   { id: 'analysis', label: 'AI Analysis' },
   { id: 'sitemap', label: 'Sitemap' },
   { id: 'blueprints', label: 'Page Blueprints' },
@@ -127,7 +131,7 @@ export default function GenerateFlow() {
     proto.businessLabel = business;
     const versions = client.prototypeVersions ?? [];
     const version = {
-      ...createVersion(proto, versionStatusFor(Boolean(client.approval?.approved))),
+      ...createVersion(proto, versionStatusFor(client.status)),
       number: nextVersionNumber(versions),
     };
     updateClient(client.id, {
@@ -136,16 +140,73 @@ export default function GenerateFlow() {
       pageBlueprints: bp,
       prototype: proto,
       prototypeVersions: [...versions, version],
+      /* Record which source information this prototype was built from, so edits
+         made later can be detected as making the prototype out of date. */
+      prototypeSourceHash: sourceFingerprint(client),
     });
     return bp;
   };
 
-  const handleGenerated = () => {
+  /* Optional AI enhancement of the deterministic pipeline. Never blocks or
+     breaks generation: any failure falls back to the local result unchanged. */
+  const withTimeout = <T,>(promise: Promise<T>, ms: number): Promise<T | null> =>
+    Promise.race([
+      promise,
+      new Promise<null>((resolve) => window.setTimeout(() => resolve(null), ms)),
+    ]).catch(() => null);
+
+  const enhance = async (
+    a: AiAnalysis,
+    sm: SitemapPage[]
+  ): Promise<{ analysis: AiAnalysis; sitemap: SitemapPage[] }> => {
+    if (settings.aiProvider !== 'custom') return { analysis: a, sitemap: sm };
+    const provider = getAIProvider(settings);
+    const ctx: GenerationContext = {
+      business,
+      industry: client.industry,
+      projectType: client.projectType,
+      projectGoal: client.projectGoal,
+      targetAudience: client.targetAudience,
+      features: [...client.features, ...client.customFeatures],
+      pages: sm.map((p) => p.label),
+      theme: client.theme || settings.defaultTheme,
+      dynamicSummary: summarizeDynamicAnswers(client.dynamicAnswers, client.projectType),
+    };
+    try {
+      const [aiPages, aiImprovements] = await Promise.all([
+        withTimeout(provider.suggestSitemapPages(ctx), 10000),
+        withTimeout(provider.suggestImprovements(ctx), 10000),
+      ]);
+      const next: SitemapPage[] = [...sm];
+      (aiPages ?? []).forEach((raw) => {
+        const clean = raw.trim();
+        if (clean && !next.some((p) => p.label.toLowerCase() === clean.toLowerCase())) {
+          next.push({ id: uid(), label: clean });
+        }
+      });
+      const suggestions = [...a.suggestions];
+      (aiImprovements ?? []).forEach((raw) => {
+        const clean = raw.trim();
+        if (clean && !suggestions.some((s) => s.toLowerCase() === clean.toLowerCase())) {
+          suggestions.push(clean);
+        }
+      });
+      return {
+        analysis: { ...a, suggestions },
+        sitemap: next.slice(0, 12),
+      };
+    } catch {
+      return { analysis: a, sitemap: sm };
+    }
+  };
+
+  const handleGenerated = async () => {
     const a = analyzeClient(client);
     const sm = generateSitemap(client);
-    setAnalysis(a);
-    setSitemap(sm);
-    const bp = persist(a, sm);
+    const enhanced = await enhance(a, sm);
+    setAnalysis(enhanced.analysis);
+    setSitemap(enhanced.sitemap);
+    const bp = persist(enhanced.analysis, enhanced.sitemap);
     setBlueprints(bp);
     setPhase('analysis');
     toast('Prototype generated successfully.', 'success');
@@ -157,6 +218,11 @@ export default function GenerateFlow() {
     setBlueprints(bp);
     setPhase('blueprints');
     toast('Sitemap saved. Page blueprints updated.', 'success');
+  };
+
+  const handleBlueprintsContinue = () => {
+    setPhase('prototype');
+    window.scrollTo({ top: 0 });
   };
 
   const theme = client.theme ? getTheme(client.theme) : undefined;
@@ -357,9 +423,67 @@ export default function GenerateFlow() {
               <button onClick={() => setPhase('sitemap')} className="btn-secondary">
                 <ArrowLeft size={16} /> Back to sitemap
               </button>
-              <button onClick={() => navigate(`/clients/${client.id}/prototype`)} className="btn-primary">
-                <Sparkles size={16} /> Open prototype workspace <ArrowRight size={16} />
+              <button onClick={handleBlueprintsContinue} className="btn-primary">
+                <Sparkles size={16} /> Continue to prototype <ArrowRight size={16} />
               </button>
+            </div>
+          </div>
+        )}
+
+        {/* ---------------------------------------------------------- */}
+        {/* PROTOTYPE READY                                            */}
+        {/* ---------------------------------------------------------- */}
+        {phase === 'prototype' && (
+          <div className="space-y-5 animate-fade-in">
+            <div className="card overflow-hidden">
+              <div className="border-b border-slate-100 bg-gradient-to-r from-brand-600 to-violet-600 px-6 py-6 dark:border-slate-800">
+                <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-widest text-white/80">
+                  <Check size={13} /> Prototype ready
+                </div>
+                <h1 className="mt-2 text-2xl font-bold tracking-tight text-white">
+                  Your website prototype is ready to explore
+                </h1>
+                <p className="mt-1 text-sm text-indigo-100">
+                  An editable, theme-aware prototype was generated from the sitemap and page blueprints.
+                </p>
+              </div>
+              <div className="grid gap-4 p-6 sm:grid-cols-3">
+                <div className="rounded-xl border border-slate-100 bg-slate-50/60 px-4 py-3 dark:border-slate-800 dark:bg-slate-900/60">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Pages</p>
+                  <p className="mt-0.5 text-lg font-bold text-slate-900 dark:text-white">
+                    {sitemap?.length ?? 0}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-slate-100 bg-slate-50/60 px-4 py-3 dark:border-slate-800 dark:bg-slate-900/60">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Theme</p>
+                  <p className="mt-0.5 truncate text-lg font-bold text-slate-900 dark:text-white">
+                    {theme?.name ?? 'Selected theme'}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-slate-100 bg-slate-50/60 px-4 py-3 dark:border-slate-800 dark:bg-slate-900/60">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Blueprint sections</p>
+                  <p className="mt-0.5 text-lg font-bold text-slate-900 dark:text-white">
+                    {blueprints?.reduce((acc, b) => acc + b.sections.length, 0) ?? 0}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <button onClick={() => setPhase('blueprints')} className="btn-secondary">
+                <ArrowLeft size={16} /> Back to blueprints
+              </button>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={() => navigate(`/clients/${client.id}/generate`)}
+                  className="btn-ghost"
+                >
+                  <RefreshCw size={15} /> Regenerate
+                </button>
+                <button onClick={() => navigate(`/clients/${client.id}/prototype`)} className="btn-primary">
+                  <LayoutTemplate size={16} /> Open prototype workspace <ArrowRight size={16} />
+                </button>
+              </div>
             </div>
           </div>
         )}

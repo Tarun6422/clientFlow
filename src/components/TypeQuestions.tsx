@@ -126,7 +126,7 @@ export default function TypeQuestions({ websiteType, answers, onChange }: TypeQu
             <Input
               key={q.id}
               label={q.label}
-              type={q.kind === 'number' ? 'text' : 'text'}
+              type="text"
               inputMode={q.kind === 'number' ? 'numeric' : undefined}
               value={typeof value === 'string' ? value : ''}
               onChange={(e) => onChange({ [q.id]: e.target.value })}

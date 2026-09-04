@@ -73,6 +73,7 @@ export function emptyDraft(defaultTheme = ''): ClientDraft {
     contentProvider: '',
     notes: '',
     theme: defaultTheme,
+    dynamicAnswers: {},
   };
 }
 

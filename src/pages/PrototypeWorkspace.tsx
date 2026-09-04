@@ -1,6 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
+  AlertTriangle,
   ArrowDown,
   ArrowLeft,
   ArrowUp,
@@ -56,6 +57,7 @@ import SectionEditModal from '../components/prototype/SectionEditModal';
 import VersionHistoryModal from '../components/prototype/VersionHistoryModal';
 import { ConfirmModal, EmptyState, Modal, ModalHeader } from '../components/ui';
 import { cn, formatDate } from '../lib/utils';
+import { isPrototypeStale, sourceFingerprint } from '../lib/staleness';
 import { THEMES } from '../themes';
 
 const VIEWPORT_OPTIONS: Array<{ value: ViewportMode; label: string; icon: typeof Monitor }> = [
@@ -107,6 +109,11 @@ export default function PrototypeWorkspace() {
   const [addSectionOpen, setAddSectionOpen] = useState(false);
   const [aiBusy, setAiBusy] = useState(false);
   const [seoTitle, setSeoTitle] = useState<string | null>(null);
+  const [renamingPageId, setRenamingPageId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState('');
+  const [pendingDeletePage, setPendingDeletePage] = useState<PrototypePage | null>(null);
+  const [leaveOpen, setLeaveOpen] = useState(false);
+  const pendingLeave = useRef<string | null>(null);
 
   const ai = useMemo(() => getAIProvider(settings), [settings]);
 
@@ -123,6 +130,37 @@ export default function PrototypeWorkspace() {
   const lastVersion = client?.prototypeVersions?.length
     ? client.prototypeVersions[client.prototypeVersions.length - 1]
     : undefined;
+  const stale = client ? isPrototypeStale(client) : false;
+
+  /* Backfill the source fingerprint for prototypes generated before this
+     feature existed, so future client edits are correctly detected as stale. */
+  useEffect(() => {
+    const c = clients.find((x) => x.id === id);
+    if (c?.prototype && !c.prototypeSourceHash) {
+      updateClient(c.id, { prototypeSourceHash: sourceFingerprint(c) });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /* Warn when leaving with unsaved changes (tab close/refresh + in-app exit). */
+  useEffect(() => {
+    if (!dirty) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [dirty]);
+
+  const requestLeave = (to: string) => {
+    if (dirty) {
+      pendingLeave.current = to;
+      setLeaveOpen(true);
+    } else {
+      navigate(to);
+    }
+  };
 
   if (!client) {
     return (
@@ -183,6 +221,8 @@ export default function PrototypeWorkspace() {
     notes: client.notes,
     theme: snapshot.design.theme,
     pageLabel: activePage.label,
+    websiteType: client.projectType,
+    dynamicAnswers: client.dynamicAnswers ?? null,
   };
 
   const aiCtx = (section?: PrototypeSection | null): AIContext => ({
@@ -216,6 +256,37 @@ export default function PrototypeWorkspace() {
     setSnapshot((prev) => (prev ? { ...prev, pages: [...prev.pages, full] } : prev));
     setActivePageId(page.id);
     setSelectedSectionId(null);
+  };
+
+  const startRename = (page: PrototypePage) => {
+    setRenamingPageId(page.id);
+    setRenameValue(page.label);
+  };
+
+  const commitRename = () => {
+    const clean = renameValue.trim();
+    if (renamingPageId && clean) {
+      setSnapshot((prev) =>
+        prev
+          ? { ...prev, pages: prev.pages.map((p) => (p.id === renamingPageId ? { ...p, label: clean } : p)) }
+          : prev
+      );
+    }
+    setRenamingPageId(null);
+    setRenameValue('');
+  };
+
+  const deletePage = (pageId: string) => {
+    if (snapshot.pages.length <= 1) return;
+    const idx = snapshot.pages.findIndex((p) => p.id === pageId);
+    const remaining = snapshot.pages.filter((p) => p.id !== pageId);
+    setSnapshot((prev) => (prev ? { ...prev, pages: remaining } : prev));
+    if (activePageId === pageId) {
+      setActivePageId(remaining[Math.max(0, idx - 1)]?.id ?? remaining[0]?.id ?? '');
+    }
+    setSelectedSectionId(null);
+    setEditSection(null);
+    setPendingDeletePage(null);
   };
 
   const updateSection = (sectionId: string, patch: Partial<PrototypeSection>) => {
@@ -263,13 +334,26 @@ export default function PrototypeWorkspace() {
     if (!snapshot) return undefined;
     const versions = client.prototypeVersions ?? [];
     const version: PrototypeVersion = {
-      ...createVersion(snapshot, versionStatusFor(Boolean(client.approval?.approved))),
+      ...createVersion(snapshot, versionStatusFor(client.status)),
       number: nextVersionNumber(versions),
       note: 'Edited in prototype workspace',
     };
+    /* Keep the stored sitemap and page blueprints in sync with the workspace
+       pages (rename/delete/add) so profile, PDF and future regenerations
+       reflect the same structure. */
+    const existingBlueprints = client.pageBlueprints ?? [];
+    const pageIds = new Set(snapshot.pages.map((p) => p.id));
+    const syncedBlueprints = existingBlueprints
+      .filter((b) => pageIds.has(b.pageId))
+      .map((b) => {
+        const page = snapshot.pages.find((p) => p.id === b.pageId);
+        return page ? { ...b, pageName: page.label } : b;
+      });
     updateClient(client.id, {
       prototype: cloneSnapshot(snapshot),
       prototypeVersions: [...versions, version],
+      sitemap: snapshot.pages.map((p) => ({ id: p.id, label: p.label })),
+      pageBlueprints: syncedBlueprints,
     });
     toast(`Prototype saved as Version ${version.number}.`);
     return version;
@@ -285,9 +369,24 @@ export default function PrototypeWorkspace() {
   };
 
   const handleApprove = () => {
-    const version = dirty ? handleSave() : lastVersion;
+    let version = lastVersion;
+    if (dirty && snapshot) {
+      /* Approving unsaved work saves it first — the newly created version is
+         the approved one, so it carries the 'Prototype Approved' status. */
+      const versions = client.prototypeVersions ?? [];
+      const v: PrototypeVersion = {
+        ...createVersion(snapshot, 'Prototype Approved'),
+        number: nextVersionNumber(versions),
+        note: 'Approved in prototype workspace',
+      };
+      updateClient(client.id, {
+        prototype: cloneSnapshot(snapshot),
+        prototypeVersions: [...versions, v],
+      });
+      version = v;
+    }
     updateClient(client.id, {
-      approval: { approved: true, date: Date.now(), version: version?.number ?? lastVersion?.number ?? 1 },
+      approval: { approved: true, date: Date.now(), version: version?.number ?? 1 },
       status: 'Prototype Approved',
     });
     setApproveOpen(false);
@@ -377,12 +476,12 @@ export default function PrototypeWorkspace() {
     <div className="flex h-screen flex-col overflow-hidden bg-slate-100 dark:bg-slate-950">
       {/* ---------------- Top bar ---------------- */}
       <header className="z-30 flex shrink-0 flex-wrap items-center gap-2 border-b border-slate-200 bg-white px-3 py-2.5 dark:border-slate-800 dark:bg-slate-900 sm:px-4">
-        <Link
-          to={`/clients/${client.id}`}
-          className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm font-semibold text-slate-500 transition-colors hover:bg-slate-100 hover:text-brand-600 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-brand-400"
+        <button
+          onClick={() => requestLeave(`/clients/${client.id}`)}
+          className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm font-semibold text-slate-500 transition-colors hover:bg-slate-100 hover:text-brand-600 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-brand-400"
         >
           <ArrowLeft size={16} /> <span className="hidden sm:inline">Client</span>
-        </Link>
+        </button>
         <div className="min-w-0">
           <div className="truncate text-sm font-bold text-slate-900 dark:text-white">
             Prototype — {business}
@@ -391,6 +490,7 @@ export default function PrototypeWorkspace() {
             {activePage.label} · {snapshot.design.theme} ·{' '}
             {lastVersion ? `Version ${lastVersion.number}` : 'Unsaved'}
             {dirty && <span className="ml-1 font-bold text-amber-500">· unsaved changes</span>}
+            {stale && <span className="ml-1 font-bold text-amber-500">· out of date — regenerate</span>}
           </div>
         </div>
 
@@ -416,7 +516,7 @@ export default function PrototypeWorkspace() {
         </div>
 
         <div className="flex items-center gap-1.5">
-          <button onClick={() => navigate(`/preview/${client.id}`)} className="btn-secondary btn-sm">
+          <button onClick={() => requestLeave(`/preview/${client.id}`)} className="btn-secondary btn-sm">
             <Eye size={14} /> <span className="hidden sm:inline">Preview</span>
           </button>
           <button onClick={handleShare} className="btn-secondary btn-sm" title="Copy client preview link">
@@ -436,6 +536,22 @@ export default function PrototypeWorkspace() {
         </div>
       </header>
 
+      {/* ---------------- Stale banner ---------------- */}
+      {stale && (
+        <div className="flex shrink-0 flex-wrap items-center gap-3 border-b border-amber-200 bg-amber-50 px-4 py-2.5 dark:border-amber-500/30 dark:bg-amber-500/10">
+          <span className="flex items-center gap-2 text-[13px] font-semibold text-amber-800 dark:text-amber-300">
+            <AlertTriangle size={15} /> Prototype is out of date
+          </span>
+          <span className="text-xs text-amber-700 dark:text-amber-400">
+            The client's information changed after this prototype was generated. The old version stays viewable —
+            regenerate to rebuild it from the latest answers (a new version is created; nothing is deleted).
+          </span>
+          <Link to={`/clients/${client.id}/generate`} className="btn-primary btn-sm ml-auto shrink-0">
+            <Sparkles size={13} /> Regenerate Prototype
+          </Link>
+        </div>
+      )}
+
       {/* ---------------- Body ---------------- */}
       <div className="flex min-h-0 flex-1 overflow-x-auto">
         {/* Left — pages */}
@@ -447,27 +563,81 @@ export default function PrototypeWorkspace() {
             </button>
           </div>
           <div className="flex-1 space-y-1 overflow-y-auto px-3 pb-4">
-            {snapshot.pages.map((p) => (
-              <button
-                key={p.id}
-                onClick={() => {
-                  setActivePageId(p.id);
-                  setSelectedSectionId(null);
-                }}
-                className={cn(
-                  'flex w-full cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-left text-[13px] font-semibold transition-all',
-                  p.id === activePage.id
-                    ? 'bg-brand-600 text-white shadow-sm shadow-brand-600/25'
-                    : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'
-                )}
-              >
-                <FilePlus2 size={14} className={p.id === activePage.id ? 'text-white/80' : 'text-slate-400'} />
-                <span className="truncate">{p.label}</span>
-                <span className={cn('ml-auto text-[10px] font-bold', p.id === activePage.id ? 'text-white/70' : 'text-slate-300 dark:text-slate-600')}>
-                  {p.sections.length}
-                </span>
-              </button>
-            ))}
+            {snapshot.pages.map((p) => {
+              const active = p.id === activePage.id;
+              if (renamingPageId === p.id) {
+                return (
+                  <div key={p.id} className="flex items-center gap-1.5">
+                    <input
+                      autoFocus
+                      value={renameValue}
+                      onChange={(e) => setRenameValue(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') commitRename();
+                        if (e.key === 'Escape') setRenamingPageId(null);
+                      }}
+                      onBlur={commitRename}
+                      aria-label={`Rename ${p.label}`}
+                      className="input w-full py-1.5 text-[13px]"
+                    />
+                  </div>
+                );
+              }
+              return (
+                <div
+                  key={p.id}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => {
+                    setActivePageId(p.id);
+                    setSelectedSectionId(null);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      setActivePageId(p.id);
+                      setSelectedSectionId(null);
+                    }
+                  }}
+                  className={cn(
+                    'group flex w-full cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-left text-[13px] font-semibold transition-all',
+                    active
+                      ? 'bg-brand-600 text-white shadow-sm shadow-brand-600/25'
+                      : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'
+                  )}
+                >
+                  <FilePlus2 size={14} className={active ? 'text-white/80' : 'text-slate-400'} />
+                  <span className="min-w-0 flex-1 truncate">{p.label}</span>
+                  <span className={cn('text-[10px] font-bold', active ? 'text-white/70' : 'text-slate-300 dark:text-slate-600')}>
+                    {p.sections.length}
+                  </span>
+                  <span className={cn('flex items-center gap-0.5', active ? 'opacity-100' : 'opacity-0 transition-opacity group-hover:opacity-100')}>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        startRename(p);
+                      }}
+                      className={cn('icon-btn !h-6 !w-6', active ? 'text-white hover:bg-white/20 hover:text-white' : '')}
+                      title="Rename page"
+                      aria-label={`Rename ${p.label}`}
+                    >
+                      <Pencil size={12} />
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setPendingDeletePage(p);
+                      }}
+                      disabled={snapshot.pages.length <= 1}
+                      className={cn('icon-btn !h-6 !w-6 disabled:opacity-30', active ? 'text-white hover:bg-white/20 hover:text-white' : 'hover:!bg-red-50 hover:!text-red-600 dark:hover:!bg-red-500/10 dark:hover:!text-red-400')}
+                      title={snapshot.pages.length <= 1 ? 'Cannot delete the only page' : 'Delete page'}
+                      aria-label={`Delete ${p.label}`}
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  </span>
+                </div>
+              );
+            })}
           </div>
           <div className="border-t border-slate-200 px-4 py-3 dark:border-slate-800">
             <button onClick={() => setVersionsOpen(true)} className="btn-secondary w-full btn-sm">
@@ -764,6 +934,34 @@ export default function PrototypeWorkspace() {
         confirmLabel="Approve prototype"
         danger={false}
         onConfirm={handleApprove}
+      />
+
+      {/* Delete page confirm */}
+      <ConfirmModal
+        open={pendingDeletePage !== null}
+        onClose={() => setPendingDeletePage(null)}
+        title={`Delete “${pendingDeletePage?.label ?? ''}”?`}
+        message="This page and its sections will be removed from the prototype. Save afterwards to keep the change."
+        confirmLabel="Delete page"
+        onConfirm={() => pendingDeletePage && deletePage(pendingDeletePage.id)}
+      />
+
+      {/* Unsaved changes guard */}
+      <ConfirmModal
+        open={leaveOpen}
+        onClose={() => {
+          setLeaveOpen(false);
+          pendingLeave.current = null;
+        }}
+        title="Discard unsaved changes?"
+        message="You have unsaved prototype changes. Leave without saving? They will be lost."
+        confirmLabel="Leave without saving"
+        onConfirm={() => {
+          const to = pendingLeave.current ?? `/clients/${client.id}`;
+          pendingLeave.current = null;
+          setLeaveOpen(false);
+          navigate(to);
+        }}
       />
 
       {seoTitle && (

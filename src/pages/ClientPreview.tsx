@@ -1,9 +1,8 @@
 import { useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import {
   Check,
   CheckCircle2,
-  ExternalLink,
   Loader2,
   MessageSquare,
   Monitor,
@@ -16,7 +15,7 @@ import {
 import { useApp } from '../context/AppContext';
 import type { PrototypeVersion } from '../types';
 import PrototypeRenderer, { VIEWPORT_WIDTHS, type ViewportMode } from '../components/prototype/PrototypeRenderer';
-import { ConfirmModal, Logo, Modal, ModalHeader, StatusBadge } from '../components/ui';
+import { ConfirmModal, Logo, Modal, ModalHeader } from '../components/ui';
 import { Textarea } from '../components/form';
 import { cn, uid } from '../lib/utils';
 import { getTheme } from '../themes';
@@ -72,6 +71,8 @@ export default function ClientPreview() {
       approval: { approved: true, date: Date.now(), version: versionNumber },
       status: 'Prototype Approved',
     });
+    /* The version that was current at approval time keeps its own historical
+       status; later feedback or edits never rewrite it. */
     markVersionStatus('Prototype Approved');
     setApproveOpen(false);
     toast('Prototype approved — thank you! 🎉', 'success');
@@ -93,7 +94,9 @@ export default function ClientPreview() {
         approval: client.approval?.approved ? { approved: false } : client.approval,
         status: 'Changes Requested',
       });
-      markVersionStatus('Changes Requested');
+      /* Deliberately NOT rewriting the approved version's status: the project
+         moves to "Changes Requested" but the approved version keeps its own
+         historical meaning. New saves create a fresh version instead. */
       setSubmitting(false);
       setFeedbackOpen(false);
       setFeedbackText('');
@@ -120,7 +123,20 @@ export default function ClientPreview() {
                 <Palette size={12} className="text-indigo-400" /> {theme.name}
               </span>
             )}
-            <StatusBadge status={client.status} />
+            {/* Client-facing status — never the internal workflow status. */}
+            {approved ? (
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/15 px-3 py-1 text-xs font-semibold text-emerald-400 ring-1 ring-inset ring-emerald-500/40">
+                <CheckCircle2 size={12} /> Prototype Approved
+              </span>
+            ) : client.feedback && client.feedback.length > 0 ? (
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/15 px-3 py-1 text-xs font-semibold text-amber-400 ring-1 ring-inset ring-amber-500/40">
+                <MessageSquare size={12} /> Changes Requested
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-500/15 px-3 py-1 text-xs font-semibold text-slate-300 ring-1 ring-inset ring-slate-500/40">
+                <Sparkles size={12} /> Awaiting review
+              </span>
+            )}
 
             {/* viewport */}
             <div className="flex items-center gap-0.5 rounded-xl border border-slate-800 bg-slate-900 p-1">
@@ -226,12 +242,14 @@ export default function ClientPreview() {
       </main>
 
       {/* Footer */}
+      {/* Note: this preview is a convenience view inside the same client-side
+          app — it is NOT a secured public link. There is no authentication or
+          backend in the current architecture, so the URL must not be treated
+          as private. True secure sharing would require server-side auth. */}
       <footer className="border-t border-slate-800 py-4">
-        <div className="mx-auto flex w-full max-w-[1600px] flex-wrap items-center justify-between gap-2 px-4 text-xs text-slate-500 sm:px-6">
+        <div className="mx-auto flex w-full max-w-[1600px] items-center justify-between gap-2 px-4 text-xs text-slate-500 sm:px-6">
           <span>Prepared with ClientFlow — AI-powered website planning &amp; prototyping</span>
-          <Link to={`/clients/${client.id}`} className="inline-flex items-center gap-1 hover:text-slate-300">
-            <ExternalLink size={12} /> Internal dashboard
-          </Link>
+          <span className="hidden sm:inline">Prototype preview</span>
         </div>
       </footer>
 
