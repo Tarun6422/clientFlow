@@ -180,11 +180,16 @@ export function generateSitemap(client: Client): SitemapPage[] {
     if (!seed.some((p) => p.toLowerCase() === name.toLowerCase())) seed.push(name);
   };
   if (client.projectType === 'Restaurant') {
+    if (dyn['rest-menu'] === true) ensurePage('Menu');
     if (dyn['rest-online-ordering'] === true) ensurePage('Order Online');
     if (dyn['rest-table-reservation'] === true || dyn['rest-reservation-system'] === true) ensurePage('Reservations');
+    if (dyn['rest-gallery'] === true) ensurePage('Gallery');
   }
   if (client.projectType === 'Real Estate' && dyn['re-listings'] === true) {
     ensurePage('Properties');
+  }
+  if (client.projectType === 'Real Estate' && dyn['re-agents'] === true) {
+    ensurePage('Agents');
   }
   if (client.projectType === 'Portfolio' && dyn['port-projects'] === true) {
     ensurePage('Portfolio');
@@ -252,6 +257,9 @@ const SECTION_PURPOSE: Record<string, string> = {
   Newsletter: 'Capture emails and keep the audience engaged.',
   Pricing: 'Present the offer with transparent options.',
   Gallery: 'Show the space, work or products visually.',
+  'Menu highlights': 'Present the menu in clear categories so guests can choose quickly.',
+  'Property grid': 'Showcase available properties with photos, price and key details.',
+  'Reservation CTA': 'Let guests book a table or place an order in a few taps.',
   'Cart overview': 'Summarise the items the visitor is about to buy.',
   'Checkout CTA': 'Move the visitor to complete the purchase.',
   'Trust badges': 'Reassure the visitor with security and delivery notes.',
@@ -285,6 +293,11 @@ const PAGE_PLANS: Record<string, BlueprintPlan> = {
   checkout: { sections: ['Hero', 'Checkout', 'Trust badges'] },
   account: { sections: ['Hero', 'Account', 'Trust badges'] },
   login: { sections: ['Hero', 'Account'] },
+  menu: { sections: ['Hero', 'Menu highlights', 'Gallery', 'CTA'] },
+  'order online': { sections: ['Hero', 'Menu highlights', 'CTA'] },
+  reservations: { sections: ['Hero', 'Reservation CTA', 'Contact', 'FAQ'] },
+  properties: { sections: ['Hero', 'Property grid', 'Features', 'Contact', 'CTA'] },
+  agents: { sections: ['Hero', 'Team', 'Contact', 'CTA'] },
   'privacy policy': { sections: ['Text'] },
   'terms & conditions': { sections: ['Text'] },
   default: { sections: ['Hero', 'Text', 'CTA'] },
@@ -312,6 +325,15 @@ function contentDirectionFor(name: string, client: Client): string {
   const business = client.businessName || client.company || client.name || NOT_PROVIDED;
   const features = [...client.features, ...client.customFeatures];
 
+  if (/menu|dish/.test(n)) {
+    return `Present what ${business} serves in clear categories. Real menu and prices: ${NOT_PROVIDED} — add them when confirmed.`;
+  }
+  if (/property|listing/.test(n)) {
+    return `Showcase the properties available through ${business}. Listings, prices and availability: ${NOT_PROVIDED} — use only real properties.`;
+  }
+  if (/agent/.test(n)) {
+    return `${NOT_PROVIDED} — introduce the real agents who help clients of ${business}.`;
+  }
   if (/hero|banner|intro/.test(n)) {
     return client.description
       ? `Open with what ${business} does: “${firstSentence(client.description, '')}”.`
@@ -401,6 +423,7 @@ const BLUEPRINT_TYPE_MAP: Array<[RegExp, PrototypeSectionType | null]> = [
   [/gallery|work|photo/i, 'gallery'],
   [/team/i, 'team'],
   [/blog|article/i, 'blog'],
+  [/menu|dish/i, 'products'],
   [/cart|summary/i, 'cards'],
   [/story|mission|process|values|text/i, 'text'],
   [/stat|number|metric/i, 'stats'],

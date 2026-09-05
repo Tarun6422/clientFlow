@@ -19,9 +19,11 @@ import {
   Save,
   Share2,
   Smartphone,
+  Redo2,
   Sparkles,
   Tablet,
   Trash2,
+  Undo2,
   Wand2,
   X,
 } from 'lucide-react';
@@ -31,6 +33,7 @@ import type {
 } from '../lib/ai';
 import { getAIProvider } from '../lib/ai';
 import type {
+  Client,
   PrototypeDesign,
   PrototypePage,
   PrototypeSection,
@@ -114,6 +117,13 @@ export default function PrototypeWorkspace() {
   const [pendingDeletePage, setPendingDeletePage] = useState<PrototypePage | null>(null);
   const [leaveOpen, setLeaveOpen] = useState(false);
   const pendingLeave = useRef<string | null>(null);
+  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved'>('idle');
+  const [historyPast, setHistoryPast] = useState<PrototypeSnapshot[]>([]);
+  const [historyFuture, setHistoryFuture] = useState<PrototypeSnapshot[]>([]);
+  const restoringRef = useRef(false);
+  const prevSnapshotRef = useRef<PrototypeSnapshot | null>(null);
+  const autosaveTimer = useRef<number | null>(null);
+  const savedResetTimer = useRef<number | null>(null);
 
   const ai = useMemo(() => getAIProvider(settings), [settings]);
 
@@ -153,6 +163,65 @@ export default function PrototypeWorkspace() {
     return () => window.removeEventListener('beforeunload', handler);
   }, [dirty]);
 
+  /* Undo/redo history — record every snapshot change except restores. */
+  useEffect(() => {
+    if (!snapshot) return;
+    if (restoringRef.current) {
+      restoringRef.current = false;
+      prevSnapshotRef.current = snapshot;
+      return;
+    }
+    const prev = prevSnapshotRef.current;
+    prevSnapshotRef.current = snapshot;
+    if (!prev || JSON.stringify(prev) === JSON.stringify(snapshot)) return;
+    setHistoryPast((p) => [...p.slice(-49), prev]);
+    setHistoryFuture([]);
+  }, [snapshot]);
+
+  /* Autosave — persist edits shortly after they happen (no version created;
+     explicit Save still creates versions). Never loses user edits. */
+  useEffect(() => {
+    if (!snapshot) return;
+    const saved = client?.prototype;
+    if (saved && JSON.stringify(snapshot) === JSON.stringify(saved)) {
+      setSaveState('idle');
+      return;
+    }
+    setSaveState('saving');
+    if (autosaveTimer.current) window.clearTimeout(autosaveTimer.current);
+    autosaveTimer.current = window.setTimeout(() => {
+      autosaveTimer.current = null;
+      persistPrototype(snapshot, false);
+    }, 900);
+    return () => {
+      if (autosaveTimer.current) {
+        window.clearTimeout(autosaveTimer.current);
+        autosaveTimer.current = null;
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [snapshot]);
+
+  /* Keyboard shortcuts: Ctrl/Cmd+Z undo, Ctrl/Cmd+Shift+Z or Ctrl+Y redo. */
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
+      const k = e.key.toLowerCase();
+      if ((k === 'z' && e.shiftKey) || k === 'y') {
+        e.preventDefault();
+        redo();
+      } else if (k === 'z') {
+        e.preventDefault();
+        undo();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [historyPast, historyFuture, snapshot]);
+
   const requestLeave = (to: string) => {
     if (dirty) {
       pendingLeave.current = to;
@@ -187,8 +256,8 @@ export default function PrototypeWorkspace() {
       <div className="flex min-h-screen items-center justify-center p-6">
         <EmptyState
           icon={LayoutTemplate}
-          title="No prototype yet"
-          description="Generate a website prototype from the client's collected information to open the workspace."
+          title="Your website prototype hasn't been generated yet"
+          description="Generate it from the client's collected information — analysis, sitemap, page blueprints and an interactive theme-aware prototype will be created automatically."
           action={
             <Link to={`/clients/${client.id}/generate`} className="btn-primary">
               <Sparkles size={16} /> Generate Website Prototype
@@ -330,6 +399,45 @@ export default function PrototypeWorkspace() {
 
   /* ---------------- persistence ---------------- */
 
+  /* Writes the current prototype to the client record, keeping the stored
+     sitemap and page blueprints in sync. `makeVersion` additionally appends
+     a version-history entry (explicit Save / Approve); autosave persists
+     without one. */
+  const persistPrototype = (
+    snap: PrototypeSnapshot,
+    makeVersion: boolean,
+    versionStatus?: PrototypeVersion['status']
+  ) => {
+    const versions = client.prototypeVersions ?? [];
+    const existingBlueprints = client.pageBlueprints ?? [];
+    const pageIds = new Set(snap.pages.map((p) => p.id));
+    const syncedBlueprints = existingBlueprints
+      .filter((b) => pageIds.has(b.pageId))
+      .map((b) => {
+        const page = snap.pages.find((p) => p.id === b.pageId);
+        return page ? { ...b, pageName: page.label } : b;
+      });
+    const patch: Partial<Client> = {
+      prototype: cloneSnapshot(snap),
+      sitemap: snap.pages.map((p) => ({ id: p.id, label: p.label })),
+      pageBlueprints: syncedBlueprints,
+    };
+    if (makeVersion) {
+      patch.prototypeVersions = [
+        ...versions,
+        {
+          ...createVersion(snap, versionStatus ?? versionStatusFor(client.status)),
+          number: nextVersionNumber(versions),
+          note: 'Edited in prototype workspace',
+        },
+      ];
+    }
+    updateClient(client.id, patch);
+    setSaveState('saved');
+    if (savedResetTimer.current) window.clearTimeout(savedResetTimer.current);
+    savedResetTimer.current = window.setTimeout(() => setSaveState('idle'), 1600);
+  };
+
   const handleSave = (): PrototypeVersion | undefined => {
     if (!snapshot) return undefined;
     const versions = client.prototypeVersions ?? [];
@@ -338,25 +446,35 @@ export default function PrototypeWorkspace() {
       number: nextVersionNumber(versions),
       note: 'Edited in prototype workspace',
     };
-    /* Keep the stored sitemap and page blueprints in sync with the workspace
-       pages (rename/delete/add) so profile, PDF and future regenerations
-       reflect the same structure. */
-    const existingBlueprints = client.pageBlueprints ?? [];
-    const pageIds = new Set(snapshot.pages.map((p) => p.id));
-    const syncedBlueprints = existingBlueprints
-      .filter((b) => pageIds.has(b.pageId))
-      .map((b) => {
-        const page = snapshot.pages.find((p) => p.id === b.pageId);
-        return page ? { ...b, pageName: page.label } : b;
-      });
-    updateClient(client.id, {
-      prototype: cloneSnapshot(snapshot),
-      prototypeVersions: [...versions, version],
-      sitemap: snapshot.pages.map((p) => ({ id: p.id, label: p.label })),
-      pageBlueprints: syncedBlueprints,
-    });
+    persistPrototype(snapshot, true);
     toast(`Prototype saved as Version ${version.number}.`);
     return version;
+  };
+
+  /* Undo / redo over the in-memory snapshot history. Restores do not get
+     recorded again, and the restored state is autosaved like any edit. */
+  const undo = () => {
+    if (historyPast.length === 0 || !snapshot) return;
+    const prev = historyPast[historyPast.length - 1];
+    setHistoryPast((p) => p.slice(0, -1));
+    setHistoryFuture((f) => [...f, snapshot]);
+    restoringRef.current = true;
+    setSnapshot(cloneSnapshot(prev));
+    setActivePageId((cur) => (prev.pages.some((p) => p.id === cur) ? cur : prev.pages[0]?.id ?? ''));
+    setSelectedSectionId(null);
+    setEditSection(null);
+  };
+
+  const redo = () => {
+    if (historyFuture.length === 0 || !snapshot) return;
+    const next = historyFuture[historyFuture.length - 1];
+    setHistoryFuture((f) => f.slice(0, -1));
+    setHistoryPast((p) => [...p, snapshot]);
+    restoringRef.current = true;
+    setSnapshot(cloneSnapshot(next));
+    setActivePageId((cur) => (next.pages.some((p) => p.id === cur) ? cur : next.pages[0]?.id ?? ''));
+    setSelectedSectionId(null);
+    setEditSection(null);
   };
 
   const handleShare = async () => {
@@ -379,10 +497,7 @@ export default function PrototypeWorkspace() {
         number: nextVersionNumber(versions),
         note: 'Approved in prototype workspace',
       };
-      updateClient(client.id, {
-        prototype: cloneSnapshot(snapshot),
-        prototypeVersions: [...versions, v],
-      });
+      persistPrototype(snapshot, true, 'Prototype Approved');
       version = v;
     }
     updateClient(client.id, {
@@ -494,8 +609,39 @@ export default function PrototypeWorkspace() {
           </div>
         </div>
 
+        {/* Undo / redo + autosave status */}
+        <div className="ml-auto flex items-center gap-1.5">
+          <button
+            onClick={undo}
+            disabled={historyPast.length === 0}
+            className="icon-btn !h-8 !w-8 disabled:cursor-not-allowed disabled:opacity-40"
+            title="Undo (Ctrl+Z)"
+            aria-label="Undo"
+          >
+            <Undo2 size={15} />
+          </button>
+          <button
+            onClick={redo}
+            disabled={historyFuture.length === 0}
+            className="icon-btn !h-8 !w-8 disabled:cursor-not-allowed disabled:opacity-40"
+            title="Redo (Ctrl+Shift+Z)"
+            aria-label="Redo"
+          >
+            <Redo2 size={15} />
+          </button>
+          <span
+            className={cn(
+              'hidden w-16 text-right text-[11px] font-semibold sm:block',
+              saveState === 'saving' ? 'text-slate-400' : saveState === 'saved' ? 'text-emerald-500' : ''
+            )}
+            aria-live="polite"
+          >
+            {saveState === 'saving' ? 'Saving…' : saveState === 'saved' ? 'Saved ✓' : ''}
+          </span>
+        </div>
+
         {/* Viewport control */}
-        <div className="ml-auto flex items-center gap-0.5 rounded-xl border border-slate-200 bg-slate-50 p-1 dark:border-slate-700 dark:bg-slate-800">
+        <div className="flex items-center gap-0.5 rounded-xl border border-slate-200 bg-slate-50 p-1 dark:border-slate-700 dark:bg-slate-800">
           {VIEWPORT_OPTIONS.map((opt) => {
             const active = viewport === opt.value;
             return (
@@ -516,7 +662,7 @@ export default function PrototypeWorkspace() {
         </div>
 
         <div className="flex items-center gap-1.5">
-          <button onClick={() => requestLeave(`/preview/${client.id}`)} className="btn-secondary btn-sm">
+          <button onClick={() => requestLeave(`/clients/${client.id}/preview`)} className="btn-secondary btn-sm">
             <Eye size={14} /> <span className="hidden sm:inline">Preview</span>
           </button>
           <button onClick={handleShare} className="btn-secondary btn-sm" title="Copy client preview link">
@@ -678,6 +824,8 @@ export default function PrototypeWorkspace() {
                 selectedSectionId={selectedSectionId}
                 onSelectSection={setSelectedSectionId}
                 onNavigate={(pageId) => setActivePageId(pageId)}
+                features={[...client.features, ...client.customFeatures]}
+                websiteType={client.projectType}
               />
             </div>
           </div>
@@ -777,10 +925,10 @@ export default function PrototypeWorkspace() {
                   </select>
                 </div>
 
-                {/* Border radius */}
+                {/* Button radius */}
                 <div>
                   <div className="mb-1.5 flex items-center justify-between">
-                    <label className="label !mb-0">Border radius</label>
+                    <label className="label !mb-0">Button radius</label>
                     <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
                       {snapshot.design.radius}px
                     </span>
@@ -792,7 +940,86 @@ export default function PrototypeWorkspace() {
                     value={snapshot.design.radius}
                     onChange={(e) => setDesign({ radius: Number(e.target.value) })}
                     className="w-full cursor-pointer accent-indigo-600"
-                    aria-label="Border radius"
+                    aria-label="Button radius"
+                  />
+                </div>
+
+                {/* Card radius */}
+                <div>
+                  <div className="mb-1.5 flex items-center justify-between">
+                    <label className="label !mb-0">Card radius</label>
+                    <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+                      {snapshot.design.cardRadius ?? snapshot.design.radius}px
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={28}
+                    value={snapshot.design.cardRadius ?? snapshot.design.radius}
+                    onChange={(e) => setDesign({ cardRadius: Number(e.target.value) })}
+                    className="w-full cursor-pointer accent-indigo-600"
+                    aria-label="Card radius"
+                  />
+                </div>
+
+                {/* Container width */}
+                <div>
+                  <div className="mb-1.5 flex items-center justify-between">
+                    <label className="label !mb-0">Container width</label>
+                    <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+                      {snapshot.design.containerWidth ? `${snapshot.design.containerWidth}px` : 'Full'}
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={1440}
+                    step={40}
+                    value={snapshot.design.containerWidth || 0}
+                    onChange={(e) => setDesign({ containerWidth: Number(e.target.value) })}
+                    className="w-full cursor-pointer accent-indigo-600"
+                    aria-label="Container width"
+                  />
+                </div>
+
+                {/* Heading scale */}
+                <div>
+                  <div className="mb-1.5 flex items-center justify-between">
+                    <label className="label !mb-0">Heading size</label>
+                    <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+                      {Math.round((snapshot.design.headingScale ?? 1) * 100)}%
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0.8}
+                    max={1.3}
+                    step={0.05}
+                    value={snapshot.design.headingScale ?? 1}
+                    onChange={(e) => setDesign({ headingScale: Number(e.target.value) })}
+                    className="w-full cursor-pointer accent-indigo-600"
+                    aria-label="Heading size"
+                  />
+                </div>
+
+                {/* Body size */}
+                <div>
+                  <div className="mb-1.5 flex items-center justify-between">
+                    <label className="label !mb-0">Body text size</label>
+                    <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+                      {snapshot.design.bodySize ?? 16}px
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={13}
+                    max={18}
+                    step={0.5}
+                    value={snapshot.design.bodySize ?? 16}
+                    onChange={(e) => setDesign({ bodySize: Number(e.target.value) })}
+                    className="w-full cursor-pointer accent-indigo-600"
+                    aria-label="Body text size"
                   />
                 </div>
               </div>

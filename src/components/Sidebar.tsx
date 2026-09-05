@@ -1,6 +1,7 @@
 import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard,
+  MonitorSmartphone,
   Moon,
   Palette,
   Settings,
@@ -22,6 +23,7 @@ interface NavItem {
 const NAV: NavItem[] = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
   { to: '/clients', label: 'Clients', icon: Users },
+  { to: '/prototypes', label: 'Prototypes', icon: MonitorSmartphone },
   { to: '/themes', label: 'Website Themes', icon: Palette },
   { to: '/settings', label: 'Settings', icon: Settings },
 ];

@@ -100,6 +100,7 @@ export default function GenerateFlow() {
   const [analysis, setAnalysis] = useState<AiAnalysis | null>(null);
   const [sitemap, setSitemap] = useState<SitemapPage[] | null>(null);
   const [blueprints, setBlueprints] = useState<PageBlueprint[] | null>(null);
+  const [aiFallback, setAiFallback] = useState(false);
 
   if (!client) {
     return (
@@ -158,8 +159,8 @@ export default function GenerateFlow() {
   const enhance = async (
     a: AiAnalysis,
     sm: SitemapPage[]
-  ): Promise<{ analysis: AiAnalysis; sitemap: SitemapPage[] }> => {
-    if (settings.aiProvider !== 'custom') return { analysis: a, sitemap: sm };
+  ): Promise<{ analysis: AiAnalysis; sitemap: SitemapPage[]; fellBack: boolean }> => {
+    if (settings.aiProvider !== 'custom') return { analysis: a, sitemap: sm, fellBack: false };
     const provider = getAIProvider(settings);
     const ctx: GenerationContext = {
       business,
@@ -194,9 +195,10 @@ export default function GenerateFlow() {
       return {
         analysis: { ...a, suggestions },
         sitemap: next.slice(0, 12),
+        fellBack: provider.fellBack,
       };
     } catch {
-      return { analysis: a, sitemap: sm };
+      return { analysis: a, sitemap: sm, fellBack: provider.fellBack };
     }
   };
 
@@ -206,6 +208,7 @@ export default function GenerateFlow() {
     const enhanced = await enhance(a, sm);
     setAnalysis(enhanced.analysis);
     setSitemap(enhanced.sitemap);
+    setAiFallback(enhanced.fellBack);
     const bp = persist(enhanced.analysis, enhanced.sitemap);
     setBlueprints(bp);
     setPhase('analysis');
@@ -267,6 +270,16 @@ export default function GenerateFlow() {
                 </p>
               </div>
               <div className="p-6">
+                {aiFallback && (
+                  <div className="mb-4 flex items-start gap-2.5 rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-900">
+                    <Sparkles size={16} className="mt-0.5 shrink-0 text-slate-400" />
+                    <p className="text-sm leading-relaxed text-slate-600 dark:text-slate-300">
+                      <span className="font-bold text-slate-800 dark:text-slate-100">AI generation unavailable.</span>{' '}
+                      We created the prototype using your project requirements and selected theme. Everything below
+                      works fully offline — you can retry AI anytime with “Regenerate analysis”.
+                    </p>
+                  </div>
+                )}
                 <p className="text-sm leading-relaxed text-slate-600 dark:text-slate-300">{analysis.summary}</p>
                 {missingCount > 0 && (
                   <div className="mt-4 flex items-start gap-2.5 rounded-xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-500/30 dark:bg-amber-500/10">

@@ -34,9 +34,11 @@ import { dynamicAnswerRows } from '../lib/typeQuestions';
 import { cn } from '../lib/utils';
 import ClientAvatar from '../components/ClientAvatar';
 import ThemePreviewModal from '../components/ThemePreviewModal';
+import FlowLauncher from '../components/flow/FlowLauncher';
 import { ConfirmModal, Modal, ModalHeader, StatusBadge } from '../components/ui';
 import ScaledPreview from '../components/ScaledPreview';
-import type { ClientStatus, ThemeWithPreview } from '../types';
+import type { ClientStatus } from '../types';
+import type { ThemeWithPreview } from '../themes';
 
 /* ---------------- small section card ---------------- */
 
@@ -467,6 +469,9 @@ export default function ClientProfile() {
         message={`Are you sure you want to delete “${client.name}”${client.company ? ` from ${client.company}` : ''}? Their brief, requirements and theme will be permanently removed.`}
         onConfirm={remove}
       />
+
+      {/* Flow — conversational robot interviewer */}
+      <FlowLauncher clientId={client.id} />
     </div>
   );
 }
@@ -647,7 +652,7 @@ function PrototypeCard({ client, onShare }: { client: ReturnType<typeof useApp>[
               <Link to={`/clients/${client.id}/prototype`} className="btn-primary btn-sm">
                 <LayoutTemplate size={14} /> Open Workspace
               </Link>
-              <Link to={`/preview/${client.id}`} className="btn-secondary btn-sm">
+              <Link to={`/clients/${client.id}/preview`} className="btn-secondary btn-sm">
                 <Eye size={14} /> Client Preview
               </Link>
               <button onClick={onShare} className="btn-secondary btn-sm">

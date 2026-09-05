@@ -44,10 +44,19 @@ export interface GenerationContext {
   dynamicSummary: string;
 }
 
+export interface AnswerInterpretation {
+  field: string;
+  value: string | string[] | boolean;
+  confidence: 'high' | 'medium' | 'low';
+}
+
 export interface AIProvider {
   id: 'local' | 'custom';
   label: string;
   available: boolean;
+  /** True when the custom provider fell back to the local engine at least
+      once (API unreachable, missing config, or invalid response). */
+  fellBack: boolean;
   improveCopy(text: string, ctx: AIContext): Promise<string>;
   rewriteHeading(text: string, ctx: AIContext): Promise<string>;
   generateCta(ctx: AIContext): Promise<string>;
@@ -58,6 +67,15 @@ export interface AIProvider {
   suggestSitemapPages(ctx: GenerationContext): Promise<string[] | null>;
   /** Generation pipeline: suggest plan improvements. `null` = no change. */
   suggestImprovements(ctx: GenerationContext): Promise<string[] | null>;
+  /** Flow interview: interpret a free-text answer into a structured value.
+      `null` means "use the deterministic local interpretation". The result
+      is validated against the caller's expectations before it is used, so
+      a model mistake can never invent client facts. */
+  interpretAnswer(
+    question: string,
+    answer: string,
+    opts: { field: string; options?: string[] }
+  ): Promise<AnswerInterpretation | null>;
 }
 
 /* ------------------------------------------------------------------ */
@@ -175,6 +193,7 @@ class LocalAIProvider implements AIProvider {
   id = 'local' as const;
   label = 'Built-in AI (offline)';
   available = true;
+  fellBack = false;
 
   async improveCopy(text: string, ctx: AIContext): Promise<string> {
     if (!text.trim()) return COPY_VARIANTS[0]('Describe what this section offers.', ctx);
@@ -217,6 +236,12 @@ class LocalAIProvider implements AIProvider {
   async suggestImprovements(_ctx: GenerationContext): Promise<string[] | null> {
     return null;
   }
+
+  /* Deterministic extraction is the authoritative interpretation; the local
+     provider defers to it (returns null). */
+  async interpretAnswer(): Promise<AnswerInterpretation | null> {
+    return null;
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -235,13 +260,17 @@ class CustomAIProvider implements AIProvider {
   id = 'custom' as const;
   label = 'Custom AI endpoint';
   available = true;
+  fellBack = false;
   private fallback = new LocalAIProvider();
 
   constructor(private settings: Settings) {}
 
-  private async run(prompt: string, ctx: AIContext, fallback: () => Promise<string>): Promise<string> {
+  private async run(prompt: string, ctx: AIContext, fallback: () => string | Promise<string>): Promise<string> {
     const { aiEndpoint, aiApiKey, aiModel } = this.settings;
-    if (!aiEndpoint || !aiApiKey) return fallback();
+    if (!aiEndpoint || !aiApiKey) {
+      this.fellBack = true;
+      return Promise.resolve(fallback());
+    }
     try {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 15000);
@@ -263,15 +292,22 @@ class CustomAIProvider implements AIProvider {
         signal: controller.signal,
       });
       clearTimeout(timer);
-      if (!res.ok) return fallback();
+      if (!res.ok) {
+        this.fellBack = true;
+        return Promise.resolve(fallback());
+      }
       const data = (await res.json()) as {
         choices?: Array<{ message?: { content?: string } }>;
       };
       const content = data.choices?.[0]?.message?.content?.trim();
-      if (!content) return fallback();
+      if (!content) {
+        this.fellBack = true;
+        return Promise.resolve(fallback());
+      }
       return content.replace(/^["']|["']$/g, '');
     } catch {
-      return fallback();
+      this.fellBack = true;
+      return Promise.resolve(fallback());
     }
   }
 
@@ -383,6 +419,74 @@ class CustomAIProvider implements AIProvider {
       .filter((line) => line.length > 4 && line.length < 240)
       .slice(0, 3);
     return items.length > 0 ? items : null;
+  }
+
+  async interpretAnswer(
+    question: string,
+    answer: string,
+    opts: { field: string; options?: string[] }
+  ): Promise<AnswerInterpretation | null> {
+    const { aiEndpoint, aiApiKey, aiModel } = this.settings;
+    if (!aiEndpoint || !aiApiKey) {
+      this.fellBack = true;
+      return null;
+    }
+    const optionsHint = opts.options?.length
+      ? ` The answer must be one of: ${opts.options.join(', ')}.`
+      : '';
+    const prompt =
+      `You are interviewing a client about their website project.\n` +
+      `Question: "${question}"\n` +
+      `Client's answer: "${answer}"\n` +
+      `Extract the key structured value from the answer.${optionsHint}\n` +
+      `Reply ONLY with JSON, no markdown: {"value": <string|boolean>, "confidence": "high"|"medium"|"low"}`;
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 8000);
+      const res = await fetch(`${aiEndpoint.replace(/\/+$/, '')}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${aiApiKey}`,
+        },
+        body: JSON.stringify({
+          model: aiModel || 'gpt-4o-mini',
+          temperature: 0,
+          max_tokens: 90,
+          messages: [
+            {
+              role: 'system',
+              content:
+                'You extract structured values from client answers. Never invent information: if the answer does not contain the value, reply {"value": null, "confidence": "low"}.',
+            },
+            { role: 'user', content: prompt },
+          ],
+        }),
+        signal: controller.signal,
+      });
+      clearTimeout(timer);
+      if (!res.ok) {
+        this.fellBack = true;
+        return null;
+      }
+      const data = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
+      const content = data.choices?.[0]?.message?.content?.trim();
+      if (!content) {
+        this.fellBack = true;
+        return null;
+      }
+      const jsonText = content.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+      const parsed = JSON.parse(jsonText) as {
+        value?: string | boolean | null;
+        confidence?: string;
+      };
+      if (parsed.value === null || parsed.value === undefined) return null;
+      const confidence = parsed.confidence === 'high' || parsed.confidence === 'medium' ? parsed.confidence : 'low';
+      return { field: opts.field, value: parsed.value, confidence };
+    } catch {
+      this.fellBack = true;
+      return null;
+    }
   }
 }
 

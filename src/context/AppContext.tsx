@@ -115,6 +115,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         feedback: undefined,
         approval: undefined,
         prototypeSourceHash: null,
+        aiConversation: null,
         dynamicAnswers: source.dynamicAnswers ? { ...source.dynamicAnswers } : undefined,
       };
       setClients((prev) => [copy, ...prev]);

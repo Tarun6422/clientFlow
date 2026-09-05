@@ -5,6 +5,7 @@ import Layout from './components/Layout';
 import ToastContainer from './components/ToastContainer';
 import Dashboard from './pages/Dashboard';
 import ClientsPage from './pages/ClientsPage';
+import PrototypesPage from './pages/PrototypesPage';
 import ClientProfile from './pages/ClientProfile';
 import ThemesPage from './pages/ThemesPage';
 import SettingsPage from './pages/SettingsPage';
@@ -45,6 +46,7 @@ export default function App() {
           <Route element={<Layout />}>
             <Route path="/" element={<Dashboard />} />
             <Route path="/clients" element={<ClientsPage />} />
+            <Route path="/prototypes" element={<PrototypesPage />} />
             <Route path="/clients/new" element={<WizardPage />} />
             <Route path="/clients/:id/edit" element={<EditRoute />} />
             <Route path="/clients/:id" element={<ClientProfile />} />
@@ -56,6 +58,7 @@ export default function App() {
           {/* ClientFlow 2.0 — focused flows outside the dashboard shell */}
           <Route path="/clients/:id/generate" element={<GenerateRoute />} />
           <Route path="/clients/:id/prototype" element={<PrototypeRoute />} />
+          <Route path="/clients/:id/preview" element={<ClientPreview />} />
           <Route path="/preview/:projectId" element={<ClientPreview />} />
         </Routes>
         <ToastContainer />

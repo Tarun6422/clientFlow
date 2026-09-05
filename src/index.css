@@ -132,6 +132,86 @@
   }
 }
 
+/* ---------------- Flow robot (conversational interviewer) ---------------- */
+
+@keyframes flow-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-3px);
+  }
+}
+
+@keyframes flow-blink {
+  0%,
+  88%,
+  100% {
+    transform: scaleY(1);
+  }
+  92%,
+  96% {
+    transform: scaleY(0.12);
+  }
+}
+
+@keyframes flow-think {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes flow-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgb(99 102 241 / 0.45);
+  }
+  70% {
+    box-shadow: 0 0 0 14px rgb(99 102 241 / 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgb(99 102 241 / 0);
+  }
+}
+
+@keyframes flow-panel-in {
+  from {
+    transform: translateX(24px);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+.flow-panel {
+  animation: flow-panel-in 0.25s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.flow-launcher {
+  animation: flow-pulse 2.4s infinite;
+}
+
+.flow-robot {
+  animation: flow-float 3.2s ease-in-out infinite;
+  filter: drop-shadow(0 4px 10px rgb(79 70 229 / 0.35));
+}
+
+.flow-eye {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: flow-blink 4.2s infinite;
+}
+
+.flow-eye--thinking {
+  animation: flow-think 0.8s ease-in-out infinite;
+}
+
 @keyframes shimmer {
   from {
     transform: translateX(-100%);

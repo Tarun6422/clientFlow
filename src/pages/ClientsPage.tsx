@@ -46,7 +46,7 @@ export default function ClientsPage() {
         <EmptyState
           icon={UserPlus}
           title="No clients yet"
-          description="Create your first client brief and keep everything organized in one place."
+          description="Create your first client brief and turn it into a website concept."
           action={
             <button onClick={() => navigate('/clients/new')} className="btn-primary">
               <Plus size={17} strokeWidth={2.5} /> Add New Client

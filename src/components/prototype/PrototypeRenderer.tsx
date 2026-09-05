@@ -1,12 +1,15 @@
 import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
 import {
   ArrowRight,
+  Calendar,
   Check,
   ChevronDown,
   Mail,
   MapPin,
   Menu,
+  MessageCircle,
   Phone,
+  Search,
   Send,
   Star,
   X,
@@ -28,6 +31,32 @@ export const VIEWPORT_WIDTHS: Record<ViewportMode, number> = {
   mobile: 390,
 };
 
+export interface FeatureChrome {
+  hasWhatsApp: boolean;
+  hasSearch: boolean;
+  hasAuth: boolean;
+  hasNewsletter: boolean;
+  hasMap: boolean;
+  hasPayment: boolean;
+  hasBooking: boolean;
+}
+
+/** Derives which feature-driven UI elements to render — only from the
+    features the client actually requested. Never invented. */
+export function featureChrome(features?: string[]): FeatureChrome {
+  const list = features ?? [];
+  const any = (re: RegExp) => list.some((f) => re.test(f));
+  return {
+    hasWhatsApp: any(/whatsapp/i),
+    hasSearch: any(/search/i),
+    hasAuth: any(/login|register|sign ?in|sign ?up/i),
+    hasNewsletter: any(/newsletter/i),
+    hasMap: any(/map/i),
+    hasPayment: any(/payment|gateway/i),
+    hasBooking: any(/booking|appointment|reservation/i),
+  };
+}
+
 /* ------------------------------------------------------------------ */
 /* Theme style engine                                                  */
 /* ------------------------------------------------------------------ */
@@ -45,6 +74,10 @@ interface DesignTokens {
   padX: number;
   gap: number;
   viewportHeading: number;
+  /** Max content width for sections (0 = full frame). */
+  containerMax: number | undefined;
+  /** Base body text size in px. */
+  bodyBase: number;
   text: string;
   muted: string;
   onPrimary: string;
@@ -89,6 +122,10 @@ export function useDesignTokens(design: PrototypeDesign, viewport: ViewportMode)
   const padX = viewport === 'desktop' ? 64 : viewport === 'tablet' ? 40 : 20;
   const gap = viewport === 'desktop' ? 28 : viewport === 'tablet' ? 22 : 16;
   const isMobile = viewport === 'mobile';
+  const containerMax =
+    design.containerWidth && design.containerWidth > 0 ? design.containerWidth : undefined;
+  const headingScale = design.headingScale ?? 1;
+  const bodyBase = design.bodySize ?? 16;
 
   const text = colors.text;
   const muted = colors.muted;
@@ -104,7 +141,7 @@ export function useDesignTokens(design: PrototypeDesign, viewport: ViewportMode)
   const heading = (size: number): CSSProperties => {
     const base: CSSProperties = {
       fontFamily: headingFont,
-      fontSize: size,
+      fontSize: size * headingScale,
       lineHeight: 1.08,
       letterSpacing: '-0.025em',
       fontWeight: 700,
@@ -196,7 +233,8 @@ export function useDesignTokens(design: PrototypeDesign, viewport: ViewportMode)
   };
 
   const card = (): CSSProperties => {
-    const rad = special === 'brutal' ? Math.max(radius, 2) : radius;
+    const cardRad = design.cardRadius ?? radius;
+    const rad = special === 'brutal' ? Math.max(cardRad, 2) : cardRad;
     if (special === 'brutal') {
       return {
         backgroundColor: colors.surface,
@@ -267,7 +305,7 @@ export function useDesignTokens(design: PrototypeDesign, viewport: ViewportMode)
     return { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : `${colors.primary}14`, border: `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : `${colors.primary}30`}` };
   };
 
-  return { design, special, isDark, isMobile, headingFont, bodyFont, padY, padX, gap, viewportHeading, text, muted, onPrimary, cols, heading, button, card, image, chip };
+  return { design, special, isDark, isMobile, headingFont, bodyFont, padY, padX, gap, viewportHeading, containerMax, bodyBase, text, muted, onPrimary, cols, heading, button, card, image, chip };
 }
 
 /* ------------------------------------------------------------------ */
@@ -331,7 +369,7 @@ function SectionIntro({ t, title, subtitle, center = true }: { t: DesignTokens; 
         {title}
       </Heading>
       {subtitle ? (
-        <p className="mt-4 text-base leading-relaxed" style={{ color: t.muted }}>
+        <p className="mt-4 leading-relaxed" style={{ color: t.muted, fontSize: t.bodyBase }}>
           {subtitle}
         </p>
       ) : null}
@@ -346,7 +384,7 @@ function SectionIntro({ t, title, subtitle, center = true }: { t: DesignTokens; 
 interface SectionProps {
   t: DesignTokens;
   section: PrototypeSection;
-  ctx: { pageLabel: string; business: string };
+  ctx: { pageLabel: string; business: string; chrome?: FeatureChrome; websiteType?: string };
 }
 
 function HeroSection({ t, section, ctx }: SectionProps) {
@@ -423,8 +461,109 @@ function ItemGridSection({ t, section, ctx, kind }: SectionProps & { kind: 'feat
   }
 
   const card = t.card();
+  const searchInput: CSSProperties = {
+    width: '100%',
+    padding: '11px 13px',
+    borderRadius: Math.max(t.design.radius, 2),
+    border: `1px solid ${t.isDark ? 'rgba(255,255,255,0.15)' : '#CBD5E1'}`,
+    backgroundColor: t.isDark ? 'rgba(255,255,255,0.04)' : '#FFFFFF',
+    color: t.text,
+    fontFamily: t.bodyFont,
+    fontSize: 13,
+    outline: 'none',
+  };
   return (
-    <div className="grid gap-6" style={{ gridTemplateColumns: `repeat(${t.cols(Math.min(n, 3))}, 1fr)` }}>
+    <>
+      {kind === 'products' && ctx.websiteType === 'E-commerce' && (
+        <div className="mb-10 space-y-5">
+          <div style={{ ...t.card(), padding: '16px 20px' }}>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className="text-base font-bold" style={{ fontFamily: t.headingFont, color: t.text }}>
+                  Seasonal offers
+                </div>
+                <div className="mt-0.5 text-xs" style={{ color: t.muted }}>
+                  Offer placeholder — add the client's real promotions here.
+                </div>
+              </div>
+              <span className="inline-flex items-center gap-1.5 text-sm font-bold" style={{ color: t.design.colors.primary }}>
+                Shop offers <ArrowRight size={14} />
+              </span>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {['All', 'Category 1', 'Category 2', 'Category 3'].map((c, i) => (
+              <span
+                key={c}
+                style={{
+                  ...t.chip(),
+                  padding: '6px 14px',
+                  fontSize: 13,
+                  fontWeight: 600,
+                  borderRadius: Math.max(t.design.radius, 2),
+                  color: i === 0 ? t.text : t.muted,
+                }}
+              >
+                {c}
+              </span>
+            ))}
+          </div>
+          <p className="text-xs" style={{ color: t.muted }}>
+            Category placeholder — replace with the client's real product categories.
+          </p>
+        </div>
+      )}
+      {kind === 'products' && ctx.websiteType === 'Real Estate' && (
+        <div className="mb-10" style={{ ...t.card(), padding: 18 }}>
+          <div className="grid gap-3" style={{ gridTemplateColumns: t.cols(4) > 1 ? '1fr 1fr 1fr auto' : '1fr' }}>
+            <input placeholder="Location" aria-label="Location" style={searchInput} />
+            <select aria-label="Property type" style={searchInput}>
+              <option>Any type</option>
+              <option>Apartment</option>
+              <option>Villa</option>
+              <option>Plot</option>
+            </select>
+            <select aria-label="Budget" style={searchInput}>
+              <option>Any budget</option>
+              <option>Budget 1</option>
+              <option>Budget 2</option>
+              <option>Budget 3</option>
+            </select>
+            <button style={t.button('primary')}>
+              <Search size={14} /> Search
+            </button>
+          </div>
+          <p className="mt-3 text-xs" style={{ color: t.muted }}>
+            Property search placeholder — filter the client's real listings.
+          </p>
+        </div>
+      )}
+      {kind === 'blog' && ctx.websiteType === 'Blog' && (
+        <div
+          className="mb-10 grid items-center gap-6"
+          style={{ gridTemplateColumns: t.cols(2) > 1 ? '1.1fr 0.9fr' : '1fr' }}
+        >
+          <ImgPlaceholder t={t} label="Featured article image" seed="blog" i={0} className="h-56 w-full" />
+          <div className="flex flex-col">
+            <span
+              className="self-start px-3 py-1 text-[11px] font-bold uppercase tracking-wide"
+              style={{ ...t.chip(), borderRadius: Math.max(t.design.radius, 2), color: t.design.colors.primary }}
+            >
+              Featured
+            </span>
+            <div className="mt-3 text-xl font-bold" style={{ fontFamily: t.headingFont, color: t.text }}>
+              Featured article title
+            </div>
+            <p className="mt-2 text-sm leading-relaxed" style={{ color: t.muted }}>
+              Excerpt placeholder — feature the client's latest article here.
+            </p>
+            <span className="mt-3 inline-flex items-center gap-1.5 text-sm font-semibold" style={{ color: t.design.colors.primary }}>
+              Read article <ArrowRight size={14} />
+            </span>
+          </div>
+        </div>
+      )}
+      <div className="grid gap-6" style={{ gridTemplateColumns: `repeat(${t.cols(Math.min(n, 3))}, 1fr)` }}>
       {Array.from({ length: Math.max(items.length, n) }).map((_, i) => {
         const item: PrototypeItem | undefined = items[i];
         const title = item?.title ?? `${kind} ${i + 1}`;
@@ -434,10 +573,10 @@ function ItemGridSection({ t, section, ctx, kind }: SectionProps & { kind: 'feat
             {showImage && !isGallery && (
               <ImgPlaceholder
                 t={t}
-                label={item?.image || (kind === 'team' ? 'Portrait' : 'Image')}
+                label={item?.image || 'Image'}
                 seed={kind}
                 i={i}
-                className={cn('w-full', kind === 'team' ? 'h-40' : 'h-44')}
+                className="w-full h-44"
                 style={{ borderRadius: 0, borderBottom: specialBorder(t) }}
               />
             )}
@@ -462,7 +601,7 @@ function ItemGridSection({ t, section, ctx, kind }: SectionProps & { kind: 'feat
                   {item.meta}
                 </div>
               )}
-              <p className="mt-3 flex-1 text-sm leading-relaxed" style={{ color: t.muted }}>
+              <p className="mt-3 flex-1 leading-relaxed" style={{ color: t.muted, fontSize: Math.max(t.bodyBase - 2, 12) }}>
                 {desc}
               </p>
               {kind === 'blog' && (
@@ -474,7 +613,8 @@ function ItemGridSection({ t, section, ctx, kind }: SectionProps & { kind: 'feat
           </div>
         );
       })}
-    </div>
+      </div>
+    </>
   );
 }
 
@@ -596,7 +736,7 @@ function LogosSection({ t, section }: SectionProps) {
   );
 }
 
-function ContactSection({ t, section }: SectionProps) {
+function ContactSection({ t, section, ctx }: SectionProps) {
   const input: CSSProperties = {
     width: '100%',
     padding: '12px 14px',
@@ -609,7 +749,8 @@ function ContactSection({ t, section }: SectionProps) {
     outline: 'none',
   };
   return (
-    <div className="grid items-start gap-10" style={{ gridTemplateColumns: t.cols(2) > 1 ? '1fr 1fr' : '1fr' }}>
+    <>
+      <div className="grid items-start gap-10" style={{ gridTemplateColumns: t.cols(2) > 1 ? '1fr 1fr' : '1fr' }}>
       <div>
         <Heading t={t} size={t.viewportHeading}>
           {section.title || 'Contact us'}
@@ -646,7 +787,47 @@ function ContactSection({ t, section }: SectionProps) {
           </button>
         </div>
       </div>
-    </div>
+      </div>
+
+      {ctx.chrome?.hasMap && (
+        <div style={{ ...t.card(), marginTop: 24, overflow: 'hidden' }}>
+          <div
+            className="flex flex-col items-center justify-center gap-1.5"
+            style={{
+              height: 220,
+              backgroundColor: t.isDark ? '#1E293B' : '#E2E8F0',
+              backgroundImage:
+                'linear-gradient(rgba(255,255,255,0.14) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.14) 1px, transparent 1px)',
+              backgroundSize: '28px 28px',
+              color: t.muted,
+            }}
+          >
+            <MapPin size={26} style={{ color: t.design.colors.primary }} />
+            <span className="text-sm font-semibold">Map placeholder</span>
+            <span className="text-xs">Embed the client's Google Map here.</span>
+          </div>
+        </div>
+      )}
+
+      {ctx.chrome?.hasBooking && (
+        <div style={{ ...t.card(), marginTop: 24, padding: 22 }}>
+          <div className="text-base font-bold" style={{ fontFamily: t.headingFont, color: t.text }}>
+            Book an appointment
+          </div>
+          <div className="mt-4 grid gap-3" style={{ gridTemplateColumns: t.cols(3) > 1 ? '1fr 1fr 1fr' : '1fr' }}>
+            <input type="date" aria-label="Preferred date" style={input} />
+            <input type="time" aria-label="Preferred time" style={input} />
+            <input placeholder="Details (e.g. party size)" aria-label="Booking details" style={input} />
+          </div>
+          <button className="mt-4" style={t.button('primary')}>
+            <Calendar size={15} /> Request booking
+          </button>
+          <p className="mt-3 text-xs" style={{ color: t.muted }}>
+            Booking placeholder — connect the client's calendar or reservation system.
+          </p>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -681,7 +862,9 @@ function FaqSection({ t, section }: SectionProps) {
 }
 
 function PricingSection({ t, section }: SectionProps) {
-  const items = section.items.length ? section.items : [{ title: 'Plan', meta: 'Contact for pricing', description: 'Describe what is included.' }];
+  const items: PrototypeItem[] = section.items.length
+    ? section.items
+    : [{ id: 'price-fallback', title: 'Plan', meta: 'Contact for pricing', description: 'Describe what is included.' }];
   const featured = Math.min(1, items.length - 1);
   return (
     <div className="grid gap-6" style={{ gridTemplateColumns: `repeat(${t.cols(3)}, 1fr)` }}>
@@ -736,7 +919,7 @@ function TextSection({ t, section }: SectionProps) {
         {section.title}
       </Heading>
       {section.subtitle && (
-        <p className="mt-6 text-lg leading-relaxed" style={{ color: t.muted }}>
+        <p className="mt-6 leading-relaxed" style={{ color: t.muted, fontSize: t.bodyBase + 2 }}>
           {section.subtitle}
         </p>
       )}
@@ -764,6 +947,7 @@ function PrototypeNav({
   business,
   onNavigate,
   interactive,
+  chrome,
 }: {
   t: DesignTokens;
   pages: PrototypePage[];
@@ -771,6 +955,7 @@ function PrototypeNav({
   business: string;
   onNavigate?: (pageId: string) => void;
   interactive?: boolean;
+  chrome: FeatureChrome;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const { colors } = t.design;
@@ -812,7 +997,7 @@ function PrototypeNav({
           ) : (
             <div
               className="flex h-9 w-9 items-center justify-center text-sm font-bold text-white"
-              style={{ backgroundColor: colors.primary, borderRadius: t.special === 'brutal' ? 0 : Math.max(t.design.radius, 2), fontFamily: t.headingFont }}
+              style={{ backgroundColor: colors.primary, borderRadius: Math.max(t.design.radius, 2), fontFamily: t.headingFont }}
             >
               {(logoText || 'C').slice(0, 1).toUpperCase()}
             </div>
@@ -830,12 +1015,16 @@ function PrototypeNav({
                 className="cursor-pointer"
                 style={{
                   color: p.id === activePageId ? (t.special === 'brutal' ? t.text : colors.primary) : t.muted,
-                  fontWeight: p.id === activePageId ? 700 : 500,
+                  fontWeight:
+                    p.id === activePageId && (t.special === 'brutal' || t.special === 'dark')
+                      ? 800
+                      : p.id === activePageId
+                        ? 700
+                        : 500,
                   borderBottom: p.id === activePageId && t.special !== 'brutal' ? `2px solid ${colors.primary}` : '2px solid transparent',
                   paddingBottom: 2,
                   fontFamily: t.special === 'brutal' || t.special === 'dark' ? t.headingFont : t.bodyFont,
                   textTransform: t.special === 'brutal' ? 'uppercase' : 'none',
-                  fontWeight: p.id === activePageId && (t.special === 'brutal' || t.special === 'dark') ? 800 : undefined,
                 }}
               >
                 {p.label}
@@ -844,7 +1033,41 @@ function PrototypeNav({
           </nav>
         )}
 
+        {!t.isMobile && chrome.hasSearch && (
+          <div style={{ position: 'relative' }}>
+            <Search
+              size={14}
+              style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: t.muted }}
+            />
+            <input
+              placeholder="Search"
+              aria-label="Search this site"
+              style={{
+                width: 170,
+                padding: '8px 12px 8px 32px',
+                borderRadius: Math.max(t.design.radius, 2),
+                border: `1px solid ${t.isDark ? 'rgba(255,255,255,0.16)' : '#E2E8F0'}`,
+                backgroundColor: t.isDark ? 'rgba(255,255,255,0.05)' : '#F8FAFC',
+                color: t.text,
+                fontSize: 13,
+                fontFamily: t.bodyFont,
+                outline: 'none',
+              }}
+            />
+          </div>
+        )}
+
         <div className="flex items-center gap-3">
+          {!t.isMobile && chrome.hasAuth && (
+            <>
+              <button className="inline-flex" style={t.button('ghost')}>
+                Log in
+              </button>
+              <button className="inline-flex" style={t.button('primary')}>
+                Sign up
+              </button>
+            </>
+          )}
           {!t.isMobile && (
             <button className="inline-flex" style={t.button('primary')}>
               Get in touch
@@ -876,6 +1099,39 @@ function PrototypeNav({
                 {p.label}
               </button>
             ))}
+            {chrome.hasSearch && (
+              <div style={{ position: 'relative', marginTop: 8 }}>
+                <Search
+                  size={14}
+                  style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: t.muted }}
+                />
+                <input
+                  placeholder="Search"
+                  aria-label="Search this site"
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px 10px 32px',
+                    borderRadius: Math.max(t.design.radius, 2),
+                    border: `1px solid ${t.isDark ? 'rgba(255,255,255,0.16)' : '#E2E8F0'}`,
+                    backgroundColor: t.isDark ? 'rgba(255,255,255,0.05)' : '#F8FAFC',
+                    color: t.text,
+                    fontSize: 13,
+                    fontFamily: t.bodyFont,
+                    outline: 'none',
+                  }}
+                />
+              </div>
+            )}
+            {chrome.hasAuth && (
+              <div className="my-3 flex gap-2">
+                <button className="flex-1" style={t.button('ghost')}>
+                  Log in
+                </button>
+                <button className="flex-1" style={t.button('primary')}>
+                  Sign up
+                </button>
+              </div>
+            )}
             {interactive && (
               <button className="my-3 w-full" style={t.button('primary')}>
                 Get in touch
@@ -937,6 +1193,65 @@ function PrototypeFooter({ t, pages, business }: { t: DesignTokens; pages: Proto
   );
 }
 
+function NewsletterStrip({ t, business }: { t: DesignTokens; business: string }) {
+  const input: CSSProperties = {
+    width: '100%',
+    padding: '12px 14px',
+    borderRadius: Math.max(t.design.radius, 2),
+    border: `1px solid ${t.isDark ? 'rgba(255,255,255,0.15)' : '#CBD5E1'}`,
+    backgroundColor: t.isDark ? 'rgba(255,255,255,0.05)' : '#FFFFFF',
+    color: t.text,
+    fontFamily: t.bodyFont,
+    fontSize: 14,
+    outline: 'none',
+  };
+  return (
+    <div
+      style={{
+        padding: `${t.padY * 0.7}px ${t.padX}px`,
+        borderTop: t.special === 'brutal' ? `4px solid ${t.text}` : `1px solid ${t.isDark ? 'rgba(255,255,255,0.08)' : '#E2E8F0'}`,
+        backgroundColor: t.special === 'dark' ? 'rgba(0,0,0,0.2)' : t.isDark ? 'rgba(255,255,255,0.02)' : '#F8FAFC',
+      }}
+    >
+      <div className="mx-auto max-w-xl text-center">
+        <h3 style={{ ...t.heading(26), fontSize: 26 }}>Stay in the loop</h3>
+        <p className="mt-2 text-sm" style={{ color: t.muted }}>
+          Subscribe for updates from {business}. Newsletter placeholder — connect the client's mailing list.
+        </p>
+        <div className="mt-5 flex gap-2" style={{ justifyContent: 'center' }}>
+          <input placeholder="Email address" aria-label="Email address" style={{ ...input, maxWidth: 320 }} />
+          <button style={t.button('primary')}>Subscribe</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PaymentStrip({ t }: { t: DesignTokens }) {
+  return (
+    <div style={{ padding: `0 ${t.padX}px ${t.padY * 0.5}px` }}>
+      <div style={{ ...t.card(), padding: 20 }}>
+        <div className="text-sm font-bold" style={{ fontFamily: t.headingFont, color: t.text }}>
+          Payment methods
+        </div>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {['Card', 'UPI', 'Net Banking', 'Wallet'].map((m) => (
+            <span
+              key={m}
+              style={{ ...t.chip(), padding: '6px 14px', fontSize: 12, fontWeight: 600, color: t.text, borderRadius: Math.max(t.design.radius, 2) }}
+            >
+              {m}
+            </span>
+          ))}
+        </div>
+        <p className="mt-3 text-xs" style={{ color: t.muted }}>
+          Payment gateway placeholder — connect a real provider to accept payments.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 /* ------------------------------------------------------------------ */
 /* Main renderer                                                       */
 /* ------------------------------------------------------------------ */
@@ -952,6 +1267,12 @@ export interface PrototypeRendererProps {
   editing?: boolean;
   selectedSectionId?: string | null;
   onSelectSection?: (sectionId: string) => void;
+  /** Feature names the client requested (e.g. client.features) — drives
+      feature-specific UI: WhatsApp button, search, login/register,
+      newsletter, map, payment and booking placeholders. */
+  features?: string[];
+  /** Website type (e.g. "E-commerce") — drives type-specific UI extras. */
+  websiteType?: string;
 }
 
 export default function PrototypeRenderer({
@@ -963,8 +1284,11 @@ export default function PrototypeRenderer({
   editing = false,
   selectedSectionId,
   onSelectSection,
+  features,
+  websiteType,
 }: PrototypeRendererProps) {
   const { pages, design } = snapshot;
+  const chrome = featureChrome(features);
   const t = useDesignTokens(design, viewport);
   const business = snapshot.businessLabel || 'Your Business';
   const page = pages.find((p) => p.id === activePageId) ?? pages[0];
@@ -1017,6 +1341,7 @@ export default function PrototypeRenderer({
             onNavigate?.(id);
           }}
           interactive={interactive}
+          chrome={chrome}
         />
 
         {currentPage?.sections.map((section) => {
@@ -1026,7 +1351,12 @@ export default function PrototypeRenderer({
               key={section.id}
               className={cn(editing && 'proto-section', editing && selected && 'proto-section-selected')}
               onClick={editing && onSelectSection ? () => onSelectSection(section.id) : undefined}
-              style={{ padding: `${t.padY}px ${t.padX}px`, position: 'relative' }}
+              style={{
+                padding: `${t.padY}px ${t.padX}px`,
+                position: 'relative',
+                maxWidth: t.containerMax,
+                margin: t.containerMax ? '0 auto' : undefined,
+              }}
             >
               {editing && selected && (
                 <span
@@ -1036,13 +1366,47 @@ export default function PrototypeRenderer({
                   {section.type}
                 </span>
               )}
-              <SectionBody t={t} section={section} ctx={{ pageLabel: currentPage?.label ?? '', business }} />
+              <SectionBody
+                t={t}
+                section={section}
+                ctx={{ pageLabel: currentPage?.label ?? '', business, chrome, websiteType }}
+              />
             </section>
           );
         })}
 
         <PrototypeFooter t={t} pages={pages} business={business} />
+
+        {chrome.hasNewsletter && <NewsletterStrip t={t} business={business} />}
+
+        {chrome.hasPayment && /cart|checkout/i.test(currentPage.label) && <PaymentStrip t={t} />}
       </div>
+
+      {chrome.hasWhatsApp && (
+        <button
+          aria-label="Chat on WhatsApp"
+          title="WhatsApp placeholder — link to the client's WhatsApp number"
+          style={{
+            position: 'absolute',
+            right: 24,
+            bottom: 24,
+            zIndex: 30,
+            width: 56,
+            height: 56,
+            borderRadius: '50%',
+            backgroundColor: '#25D366',
+            color: '#FFFFFF',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            boxShadow: '0 10px 26px rgba(0,0,0,0.3)',
+            cursor: 'pointer',
+            border: 'none',
+          }}
+        >
+          <MessageCircle size={30} fill="currentColor" strokeWidth={0} />
+        </button>
+      )}
     </div>
   );
 }

@@ -27,9 +27,12 @@ const VIEWPORT_OPTIONS: Array<{ value: ViewportMode; label: string; icon: typeof
 ];
 
 export default function ClientPreview() {
-  const { projectId } = useParams<{ projectId: string }>();
+  /* Supported as both /preview/:projectId (share link) and
+     /clients/:id/preview (internal “Client Preview” action). */
+  const { projectId, id } = useParams<{ projectId?: string; id?: string }>();
+  const clientId = projectId ?? id;
   const { clients, updateClient, toast } = useApp();
-  const client = clients.find((c) => c.id === projectId);
+  const client = clients.find((c) => c.id === clientId);
 
   const [viewport, setViewport] = useState<ViewportMode>('desktop');
   const [pageId, setPageId] = useState<string>(() => client?.prototype?.pages[0]?.id ?? '');
@@ -227,6 +230,8 @@ export default function ClientPreview() {
                 activePageId={pageId}
                 viewport={viewport}
                 interactive
+                features={[...client.features, ...client.customFeatures]}
+                websiteType={client.projectType}
               />
             </div>
           </div>

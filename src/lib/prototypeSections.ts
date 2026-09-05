@@ -43,7 +43,7 @@ function lowerFirst(s: string): string {
   return s.charAt(0).toLowerCase() + s.slice(1);
 }
 
-function items(seed: string, count: number, fn: (i: number) => PrototypeItem): PrototypeItem[] {
+function items(seed: string, count: number, fn: (i: number) => Omit<PrototypeItem, 'id'>): PrototypeItem[] {
   return Array.from({ length: count }).map((_, i) => {
     const base = fn(i);
     return { id: `${seed}-${i}`, ...base };
@@ -322,6 +322,9 @@ export function defaultDesign(themeId: string): PrototypeDesign {
   return {
     theme: themeId,
     colors: palette,
+    containerWidth: 0,
+    headingScale: 1,
+    bodySize: 16,
     ...(THEME_DESIGN_DEFAULTS[themeId] ?? {}),
   } as PrototypeDesign;
 }

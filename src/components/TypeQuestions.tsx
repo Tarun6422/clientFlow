@@ -19,6 +19,7 @@ function YesNo({
 }: {
   question: TypeQuestion;
   value: boolean | undefined;
+  /** `undefined` clears the answer. */
   onChange: (value: boolean | undefined) => void;
 }) {
   const pick = (v: boolean) => onChange(value === v ? undefined : v);
@@ -86,7 +87,12 @@ export default function TypeQuestions({ websiteType, answers, onChange }: TypeQu
                 <YesNo
                   question={q}
                   value={typeof value === 'boolean' ? value : undefined}
-                  onChange={(v) => onChange({ [q.id]: v })}
+                  onChange={(v) => {
+                    const next: DynamicAnswers = { ...(answers ?? {}) };
+                    if (v === undefined) delete next[q.id];
+                    else next[q.id] = v;
+                    onChange(next);
+                  }}
                 />
               </div>
             );

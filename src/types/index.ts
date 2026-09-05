@@ -78,6 +78,15 @@ export interface PrototypeDesign {
   spacing: PrototypeSpacing;
   font: PrototypeFont;
   buttons: PrototypeButton;
+  /* --- ClientFlow 3.0 design tokens (optional — older snapshots keep working) --- */
+  /** Content container width in px; 0 or undefined = full frame width. */
+  containerWidth?: number;
+  /** Multiplier (0.8–1.3) applied to section heading sizes. */
+  headingScale?: number;
+  /** Base body text size in px (13–18). */
+  bodySize?: number;
+  /** Card radius in px; falls back to `radius` when unset. */
+  cardRadius?: number;
 }
 
 export interface PrototypeSnapshot {
@@ -106,6 +115,46 @@ export interface ApprovalInfo {
   approved: boolean;
   date?: number;
   version?: number;
+}
+
+/* ------------------------------------------------------------------ */
+/* Flow — conversational robot interviewer                             */
+/* ------------------------------------------------------------------ */
+
+export type FlowMessageRole = 'agent' | 'user' | 'system';
+
+export interface FlowMessage {
+  id: string;
+  role: FlowMessageRole;
+  content: string;
+  timestamp: number;
+  /** Question control kind that rendered this message (chips, text, theme…). */
+  questionType?: string;
+  /** Client field (or "dynamic.<id>") this message collects. */
+  field?: string;
+  /** Suggested answer chips shown with an agent question. */
+  options?: string[];
+  /** The extracted value stored for a user answer. */
+  value?: string | string[] | boolean;
+}
+
+export interface AiConversation {
+  id: string;
+  messages: FlowMessage[];
+  /** Id of the step currently being asked (empty until the interview starts). */
+  currentStep: string;
+  /** Ordered ids of steps visited — powers “go back”. */
+  history: string[];
+  /** Steps the user skipped (stored as “Not provided”). */
+  skipped: string[];
+  startedAt: number;
+  updatedAt: number;
+  /** Interview begun (Let's Start clicked). */
+  started?: boolean;
+  /** Summary reached / prototype handed off. */
+  finished?: boolean;
+  /** AI-unavailable notice already shown. */
+  fellBack?: boolean;
 }
 
 /* ------------------------------------------------------------------ */
@@ -201,6 +250,9 @@ export interface Client {
   /** Fingerprint of the source fields the prototype was generated from.
       Used to detect when the prototype is out of date after client edits. */
   prototypeSourceHash?: string | null;
+
+  /* --- Flow conversational interview (kept separate from the client answers) --- */
+  aiConversation?: AiConversation | null;
 }
 
 export type ClientDraft = Omit<Client, 'id' | 'status' | 'createdAt' | 'updatedAt'>;
